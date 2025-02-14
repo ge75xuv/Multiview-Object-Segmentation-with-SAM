@@ -9,7 +9,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from custom_model_builder import build_sam2
-from show import *
  
 
 if __name__ == '__main__':
