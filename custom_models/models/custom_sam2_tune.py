@@ -18,7 +18,7 @@ from sam2.modeling.sam2_utils import (
 
 from sam2.utils.misc import concat_points
 
-from custom_sam2_base import customSAM2Base
+from .custom_sam2_base import customSAM2Base
 from training.utils.data_utils import BatchedVideoDatapoint
 
 

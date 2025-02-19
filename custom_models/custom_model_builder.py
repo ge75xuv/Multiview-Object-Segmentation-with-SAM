@@ -10,9 +10,10 @@ import re
 
 from hydra import compose, initialize
 from hydra.utils import instantiate
-initialize(config_path="../custom_models", job_name="my_app")
+initialize(version_base=None, config_path="../custom_models", job_name="train_run")
 from omegaconf import OmegaConf
 import torch
+import torch.nn as nn
 
 
 def build_sam2(
@@ -38,6 +39,7 @@ def build_sam2(
     OmegaConf.resolve(cfg)
     model = instantiate(cfg.model, _recursive_=True)
     _load_checkpoint(model, ckpt_path)
+    _remove_parameters_of_backbone(model)
     model = model.to(device)
     if mode == "eval":
         model.eval()
@@ -60,6 +62,8 @@ def _load_checkpoint(model, ckpt_path):
             logging.error(unexpected_keys)
             raise RuntimeError()
         logging.info("Loaded checkpoint sucessfully")
+    else:
+        raise RuntimeError('Provide a path for checkpoint!')
 
 def _find_keys_in_sd(sd: dict):
     '''Find the parameters keys which belong to the decoder hypernetworks and mask tokens. 
@@ -79,3 +83,14 @@ def _find_keys_in_sd(sd: dict):
     for key in hyper_mlp + iou_pred + mask_tokens:
         sd.pop(key)
     return sd, hyper_mlp + iou_pred + mask_tokens
+
+def _remove_parameters_of_backbone(model: nn.Module):
+    '''Remove the parameters of the model backbone from the trainable
+    parameters for the optimizer.
+    '''
+    for ii in model.image_encoder.parameters():
+        ii.requires_grad = False
+    #TODO This freezes the whole encoder, however in the example Ege mentioned, 
+    # they freeze the trunk and keep the neck. That could have been done as well.
+    #TODO The forward pass of the whole encoder is done with torch.no_grad(), which
+    # means, in case we need to unfreeze the neck, we need to modify the no_grad

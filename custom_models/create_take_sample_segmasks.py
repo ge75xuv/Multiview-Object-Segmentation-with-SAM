@@ -103,7 +103,8 @@ def _segmask_helper(take_name, model_name, USE_GT=False, OUTPUT_RES=32):
         take_path = MMOR_DATA_ROOT_PATH / take_folder
 
     if dataset_type == "MMOR":
-        json_path = Path('/home/guests/ege_oezsoy/MM-OR_processed') / 'take_jsons' / f'{take_name}.json'
+        mmor_path = Path('/home/polyaxon-data/data1/MM-OR_processed')
+        json_path = mmor_path / 'take_jsons' / f'{take_name}.json'
         # Read MMOR/Simstation JSON file for timestamps and image paths
         with json_path.open() as f:
             take_json = json.load(f)

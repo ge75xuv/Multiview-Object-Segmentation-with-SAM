@@ -13,7 +13,7 @@ from models.sam2.sam2.modeling import memory_encoder, memory_attention
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 from sam2.sam2_video_predictor import SAM2VideoPredictor
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
-from show import *
+from custom_models.debugging.show import *
 # from models.Mask2Former.mask2former.modeling.transformer_decoder import mask2former_transformer_decoder
 
 if __name__ == '__main__':

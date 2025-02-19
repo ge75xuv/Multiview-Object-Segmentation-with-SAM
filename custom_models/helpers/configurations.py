@@ -63,7 +63,9 @@ OBJECT_LABEL_MAP = {
     'human_7': 17
 }
 
-OR_4D_DATA_ROOT_PATH = Path('../../4D-OR')
+# OR_4D_DATA_ROOT_PATH = Path('../../4D-OR')
+OR_4D_DATA_ROOT_PATH = Path('/home/data/4D-OR')
+
 EXPORT_HOLISTICS_PATHS = list(OR_4D_DATA_ROOT_PATH.glob('export_holistic_take*'))
 
 MMOR_TAKE_FOLDERS = ['001_PKA', '002_PKA', '003_TKA', '004_PKA', '005_TKA', '006_PKA', '007_TKA', '008_PKA', '009_TKA', '010_PKA', '011_TKA', '012_1_PKA', '013_PKA', '014_PKA', '015-018_PKA',
@@ -89,7 +91,8 @@ MMOR_SPLIT_TO_TAKES = {
     'short_clips': ['013_PKA', '014_PKA', '015_PKA', '016_PKA', '017_PKA', '018_1_PKA', '018_2_PKA', '019_PKA', '020_PKA', '021_PKA', '022_PKA', '023_PKA', '024_PKA', '025_PKA', '026_PKA', '027_PKA',
                     '028_PKA', '029_PKA', '030_PKA', '031_PKA', '032_PKA', '033_PKA']  # these are not considered main takes, but can be used for some other things including anomaly detection
 }
-MMOR_DATA_ROOT_PATH = Path('../../MM-OR_processed')
+# MMOR_DATA_ROOT_PATH = Path('../../MM-OR_processed')
+MMOR_DATA_ROOT_PATH = Path('/home/polyaxon-data/data1/MM-OR_processed')
 
 TRACKER_OBJECT_MAP = {
     '8000050': 'base_array',

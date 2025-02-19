@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from helpers.configurations import OR4D_TAKE_NAME_TO_FOLDER, OR4D_TAKE_NAMES, MMOR_TAKE_NAMES, OR_4D_DATA_ROOT_PATH, MMOR_DATA_ROOT_PATH, \
     MMOR_TAKE_NAME_TO_FOLDER
-from scene_graph_prediction.utils import util
+# from scene_graph_prediction.utils import util
 
 
 class ORDataset(Dataset):
@@ -21,7 +21,8 @@ class ORDataset(Dataset):
         assert split in ['train', 'val', 'test']
         self.split = split
         self.config = config
-        self.data_path = Path('data')
+        # self.data_path = Path('data')
+        self.data_path = Path('/home/data/4D-OR/OR_4D_data')
 
         self.take_to_timestamps = {}
         self.take_to_trackertracks = {}

@@ -1,8 +1,12 @@
 # @package _global_
 
+# Hydra
+hydra:
+  verbose: true
+
 # Model
 model:
-  _target_: models.custom_sam2_base.customSAM2Base
+  _target_: models.custom_sam2_tune.SAM2Tune
   image_encoder:
     _target_: sam2.modeling.backbones.image_encoder.ImageEncoder
     scalp: 1
@@ -118,4 +122,5 @@ model:
   use_mlp_for_obj_ptr_proj: true
   # Compilation flag
   compile_image_encoder: False
+  # multimask output:= number masks
   num_multimask_outputs: 8
