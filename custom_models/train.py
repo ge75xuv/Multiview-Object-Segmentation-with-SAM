@@ -9,7 +9,7 @@ from torch.nn import MSELoss
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-import tqdm
+from tqdm import tqdm
 
 from .custom_model_builder import build_sam2
 from .dataset.mini_dataset import MiniDataset
