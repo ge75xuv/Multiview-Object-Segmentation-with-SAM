@@ -62,8 +62,8 @@ class MiniDataset(Dataset):
         print('Loading of the data path completed!')
 
         # Store the data as self and as a whole list not list of lists
-        self.segmentation_masks = [VideoDatapoint([x], video_id=i, size=(2048,1534)) for xb in seg_data for i, x in enumerate(xb)]
-        self.images = [VideoDatapoint([x], video_id=i, size=(2048,1534)) for xb in im_data for i, x in enumerate(xb)]
+        self.segmentation_masks = [x for xb in seg_data for x in xb]
+        self.images = [x for xb in im_data for x in xb]
         assert len(self.segmentation_masks) == len(self.images), "There is a problem with the lengths of the data containers"
 
     def __len__(self):
