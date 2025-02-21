@@ -10,7 +10,7 @@ import re
 
 from hydra import compose, initialize
 from hydra.utils import instantiate
-initialize(version_base=None, config_path="../custom_models", job_name="train_run")
+initialize(version_base=None, config_path="./configs", job_name="train_run")
 from omegaconf import OmegaConf
 import torch
 import torch.nn as nn

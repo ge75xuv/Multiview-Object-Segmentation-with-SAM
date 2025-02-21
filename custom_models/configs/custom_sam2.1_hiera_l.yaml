@@ -6,7 +6,7 @@ hydra:
 
 # Model
 model:
-  _target_: models.custom_sam2_tune.SAM2Tune
+  _target_: custom_models.models.custom_sam2_tune.SAM2Tune
   image_encoder:
     _target_: sam2.modeling.backbones.image_encoder.ImageEncoder
     scalp: 1

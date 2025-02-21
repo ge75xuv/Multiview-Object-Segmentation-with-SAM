@@ -11,7 +11,8 @@
             "request": "launch",
             // "program": "${file}",
             "console": "integratedTerminal",
-            "module": "custom_models.dataset.mini_dataset",
+            // "module": "custom_models.dataset.mini_dataset",
+            "module": "custom_models.train",
             "justMyCode": false,
         }
     ]

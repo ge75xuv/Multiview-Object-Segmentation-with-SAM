@@ -142,3 +142,30 @@ IDX_TO_BODY_PART = ['head', 'neck', 'leftshoulder', 'rightshoulder', 'lefthip', 
 
 STATIONARY_OBJECTS = ['instrument_table',
                       'secondary_table']  # We might have to seperate these into different takes, if an object is only stationary in one take etc.
+
+TRACK_TO_METAINFO = {
+    'instrument_table': {'color': (255, 51, 153), 'label': 1},
+    'ae': {'color': (0, 0, 255), 'label': 2},
+    'ot': {'color': (255, 255, 0), 'label': 3},
+    'mps_station': {'color': (133, 0, 133), 'label': 4},
+    'patient': {'color': (255, 0, 0), 'label': 5},
+    'drape': {'color': (183, 91, 255), 'label': 6},
+    'anest': {'color': (177, 255, 110), 'label': 7},
+    'circulator': {'color': (255, 128, 0), 'label': 8},
+    'assistant_surgeon': {'color': (116, 166, 116), 'label': 9},
+    'head_surgeon': {'color': (76, 161, 245), 'label': 10},
+    'mps': {'color': (125, 100, 25), 'label': 11},
+    'nurse': {'color': (128, 255, 0), 'label': 12},
+    'drill': {'color': (0, 255, 128), 'label': 13},  # Changed
+    'hammer': {'color': (204, 0, 0), 'label': 15},
+    'saw': {'color': (0, 255, 234), 'label': 16},
+    'tracker': {'color': (255, 128, 128), 'label': 17},  # Changed
+    'mako_robot': {'color': (60, 75, 255), 'label': 18},  # Changed
+    'monitor': {'color': (255, 255, 128), 'label': 24},  # Changed
+    'c_arm': {'color': (0, 204, 128), 'label': 25},  # Changed
+    'unrelated_person': {'color': (255, 255, 255), 'label': 26},
+    'student': {'color': (162, 232, 108), 'label': 27},
+    'secondary_table': {'color': (153, 0, 153), 'label': 28},
+    'cementer': {'color': (153, 76, 0), 'label': 29},
+    '__background__': {'color': (0, 0, 0), 'label': 0}
+}
