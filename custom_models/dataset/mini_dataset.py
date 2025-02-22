@@ -58,21 +58,21 @@ class MiniDataset(Dataset):
             # Iterate over the time stamps (The order of the for loops is changed to have a video)
             for c_idx in tqdm([1, 4, 5]):
                 segmasks = []
-                for idx, timestamp, image_files in enumerate(timestamps):
+                for idx, (timestamp, image_files) in enumerate(timestamps):
                     if idx % len_video == 0:
-                        video_batch = []
+                        video_batch_image = []
+                        video_batch_seg_mask = []
                     # Data paths
                     rgb_path = take_path / 'colorimage' / f'camera0{c_idx}_colorimage-{image_files["azure"]}.jpg'
                     mask_path = take_path / f'segmentation_export_{c_idx}' / f'{rgb_path.stem}.png'
                     interpolated_mask_path = take_path / f'segmentation_export_{c_idx}' / f'{rgb_path.stem}_interpolated.png'
 
                     # Store the data paths
-                    self.images.append(rgb_path)
-                    self.segmentation_masks.append(mask_path) if mask_path.exists() else self.segmentation_masks.append(interpolated_mask_path)
-                    # if mask_path.exists():
-                    #     self.segmentation_masks.append(mask_path)
-                    # elif interpolated_mask_path.exists():
-                    #     self.segmentation_masks.append(interpolated_mask_path)
+                    video_batch_image.append(rgb_path)
+                    video_batch_seg_mask.append(mask_path) if mask_path.exists() else video_batch_seg_mask.append(interpolated_mask_path)
+                    if (idx % len_video == len_video - 1) or (idx == len(timestamps)-1):
+                        self.images.append(video_batch_image)
+                        self.segmentation_masks.append(video_batch_seg_mask)
 
                 # assume azure is not available, use simstation instead
                 if len(segmasks) == 0:

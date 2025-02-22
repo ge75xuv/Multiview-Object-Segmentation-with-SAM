@@ -28,7 +28,7 @@ def train():
     model_type = 'large'  #TODO add this as an option
 
     # Dataset
-    train_dataset = MiniDataset(split_type='small_train', num_multimask_outputs=num_multimask_outputs)
+    train_dataset = MiniDataset(split_type='small_train', num_multimask_outputs=num_multimask_outputs, len_video=10)
     valid_dataset = MiniDataset(split_type='val', num_multimask_outputs=num_multimask_outputs)
 
     # Show the data to test
