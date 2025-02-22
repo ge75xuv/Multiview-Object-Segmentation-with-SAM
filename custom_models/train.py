@@ -10,6 +10,7 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+from training.utils.data_utils import collate_fn
 
 from .custom_model_builder import build_sam2
 from .dataset.mini_dataset import MiniDataset
@@ -25,31 +26,33 @@ def train():
     lr = 1e-5
     shuffle = False
     num_multimask_outputs = 8  # This is num mask queries
+    len_video = 3
     model_type = 'large'  #TODO add this as an option
 
     # Dataset
-    train_dataset = MiniDataset(split_type='small_train', num_multimask_outputs=num_multimask_outputs, len_video=10)
-    valid_dataset = MiniDataset(split_type='val', num_multimask_outputs=num_multimask_outputs)
+    train_dataset = MiniDataset(split_type='mini_train', num_multimask_outputs=num_multimask_outputs, len_video=len_video)
+    valid_dataset = MiniDataset(split_type='val', num_multimask_outputs=num_multimask_outputs, len_video=len_video)
 
     # Show the data to test
-    debug = False
+    debug = True
     if debug:
         idx = np.random.random_integers(0, len(train_dataset))
-        image, segmentation_mask, one_hot_mask = train_dataset[idx]
-        image.save('temp/image.png')
-        segmentation_mask.save('temp/segmentation_mask.png')
-        for i in range(num_multimask_outputs):
-            Image.fromarray((one_hot_mask[i].numpy().T.astype('uint8') * 255)).save(f'temp/one_hot{i}.png')
+        frame_obj_list, frames_segmentation_mask = train_dataset[idx]
+        for i in range(len_video):
+            image = frame_obj_list[i].data
+            segmentation_mask = frames_segmentation_mask[i]
+            Image.fromarray(image.permute(1,2,0).numpy().astype('uint8')).save(f'temp/image{i}.png')
+            segmentation_mask.save(f'temp/segmentation_mask{i}.png')
+            for j in range(num_multimask_outputs):
+                Image.fromarray((frame_obj_list[i].objects[j].segment.numpy().T.astype('uint8') * 255)).save(f'temp/one_hot{i}{j}.png')
 
     # TODO Data Augmentation in the Dataset
-
-    # TODO We have to obey the structure of the video data
-    
-    # TODO We need to use class BatchedVideoDatapoint see Data utils
+    # TODO We have to obey the structure of the video data DONE
+    # TODO We need to use class BatchedVideoDatapoint see Data utils DONE
 
     # Dataloader
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle)
-    valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_fn)
+    valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
 
     # Model
     config = 'custom_sam2.1_hiera_l.yaml'  # This config is per default the trainSAM2

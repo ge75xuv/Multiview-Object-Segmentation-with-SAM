@@ -8,7 +8,7 @@ import torch
 from torch.utils.data import Dataset
 import torchvision
 from torchvision.transforms.functional import pil_to_tensor
-from training.utils.data_utils import VideoDatapoint
+from training.utils.data_utils import Object, Frame, VideoDatapoint
 from tqdm import tqdm
 
 from ..helpers.configurations import *
@@ -18,7 +18,7 @@ class MiniDataset(Dataset):
     def __init__(self, split_type:str, num_multimask_outputs:int, len_video:int):
         '''Initialzie the class open the data folders and store them.
         TODO Data Augmentatation
-        TODO Video Batches:
+        TODO Video Batches: DONE
                 Let's store images in self.images as [[fr0, fr1, fr2, frK-1], [fr0+K, fr1+K, fr2+K, frK+k-1], ...]
                 so a list of small videos. Thus during __getitem__ I can load those images and return them as BatchedVideoDatapoint
                 img_batch: A [TxBxCxHxW]
@@ -47,6 +47,7 @@ class MiniDataset(Dataset):
             # Folder names
             json_path = root_path / 'take_jsons' / f'{take_name}.json'
             take_path = root_path / take_name
+            print(f'Loading the take {take_name}!\n')
             
             # Read MMOR/Simstation JSON file for timestamps and image paths
             with json_path.open() as f:
@@ -54,41 +55,50 @@ class MiniDataset(Dataset):
                 timestamps = take_json['timestamps']
                 timestamps = {int(k): v for k, v in timestamps.items()}
                 timestamps = sorted(timestamps.items())
+
+            # Check if the take needs to use simstation or azure
+            flag_simstation = False
+            seg_export_folders = [dir_name for dir_name in os.listdir(take_path) if dir_name.startswith('segmentation_export')]
+            if len(seg_export_folders) == 0:
+                flag_simstation = True
+                seg_export_folders = [dir_name for dir_name in os.listdir(take_path) if dir_name.startswith('simstation_segmentation_export')]
+                assert len(seg_export_folders) != 0, "Azure and Simstation data does not exist!"
+            camera_indices = [int(idx[-1]) for idx in seg_export_folders]
             
-            # Iterate over the time stamps (The order of the for loops is changed to have a video)
-            for c_idx in tqdm([1, 4, 5]):
-                segmasks = []
+            # Iterate over the time stamps (The order of the for loops is changed to have a video from a cameraview first)
+            for c_idx in tqdm(camera_indices):
                 for idx, (timestamp, image_files) in enumerate(timestamps):
+                    # Create the video frames lists
                     if idx % len_video == 0:
                         video_batch_image = []
                         video_batch_seg_mask = []
+
                     # Data paths
-                    rgb_path = take_path / 'colorimage' / f'camera0{c_idx}_colorimage-{image_files["azure"]}.jpg'
-                    mask_path = take_path / f'segmentation_export_{c_idx}' / f'{rgb_path.stem}.png'
-                    interpolated_mask_path = take_path / f'segmentation_export_{c_idx}' / f'{rgb_path.stem}_interpolated.png'
+                    if not flag_simstation:
+                        rgb_path = take_path / 'colorimage' / f'camera0{c_idx}_colorimage-{image_files["azure"]}.jpg'
+                        mask_path = take_path / f'segmentation_export_{c_idx}' / f'{rgb_path.stem}.png'
+                        interpolated_mask_path = take_path / f'segmentation_export_{c_idx}' / f'{rgb_path.stem}_interpolated.png'
+                    else:
+                        # Simstation data paths
+                        rgb_path = take_path / 'simstation' / f'camera0{c_idx}_{image_files["simstation"]}.jpg'
+                        mask_path = take_path / f'simstation_segmentation_export_{c_idx}' / f'{rgb_path.stem}.png'
+                        interpolated_mask_path = take_path / f'simstation_segmentation_export_{c_idx}' / f'{rgb_path.stem}_interpolated.png'
 
                     # Store the data paths
-                    video_batch_image.append(rgb_path)
-                    video_batch_seg_mask.append(mask_path) if mask_path.exists() else video_batch_seg_mask.append(interpolated_mask_path)
+                    if mask_path.exists():
+                        video_batch_image.append(rgb_path)
+                        video_batch_seg_mask.append(mask_path)  
+                    elif interpolated_mask_path.exists():
+                        video_batch_image.append(rgb_path)
+                        video_batch_seg_mask.append(interpolated_mask_path)
+                    else:
+                        break
+
+                    # Complete the video sequence
                     if (idx % len_video == len_video - 1) or (idx == len(timestamps)-1):
                         self.images.append(video_batch_image)
                         self.segmentation_masks.append(video_batch_seg_mask)
-
-                # assume azure is not available, use simstation instead
-                if len(segmasks) == 0:
-                    for c_idx in [0, 2, 3]:
-                        # Simstation data paths
-                        simstation_rgb_path = take_path / 'simstation' / f'camera0{c_idx}_{image_files["simstation"]}.jpg'
-                        simstation_mask_path = take_path / f'simstation_segmentation_export_{c_idx}' / f'{simstation_rgb_path.stem}.png'
-                        simstation_interpolated_mask_path = take_path / f'simstation_segmentation_export_{c_idx}' / f'{simstation_rgb_path.stem}_interpolated.png'
-
-                        # Store simstation data paths
-                        self.images.append(simstation_rgb_path)
-                        if simstation_mask_path.exists():
-                            self.segmentation_masks.append(simstation_mask_path)
-                        elif interpolated_mask_path.exists():
-                            self.segmentation_masks.append(simstation_interpolated_mask_path)
-        
+   
         if False:
             # Create paths to data directories and data path containers
             data_paths = [root_path / ii for ii in split_folder_names]
@@ -134,29 +144,48 @@ class MiniDataset(Dataset):
         return len(self.segmentation_masks)
     
     def __getitem__(self, index):
-        image = Image.open(self.images[index]).convert("RGB")
-        # segmentation_mask = cv2.imread(self.segmentation_masks[index])
-        segmentation_mask = Image.open(self.segmentation_masks[index]).convert("RGB")
-        one_hot_mask = self._convert_to_one_hot_mask(segmentation_mask)
-        return pil_to_tensor(image), pil_to_tensor(segmentation_mask), one_hot_mask
+        video_frames = self.images[index]
+        video_frames_segmentation_mask = self.segmentation_masks[index]
+        frame_obj_list, frames_segmentation_mask = self._convert_to_one_hot_mask(video_frames, video_frames_segmentation_mask)
+        return frame_obj_list, frames_segmentation_mask
 
-    def _convert_to_one_hot_mask(self, segmentation_mask):
-        seg_np = np.array(segmentation_mask)[:,:,0].T  # We only need one channel, transpose since numpy reverts the positions
-        one_hot_mask = torch.zeros((self.num_multimask_outputs , *segmentation_mask.size))
-        i = 0
-        for obj_keys, obj_values in TRACK_TO_METAINFO.items():
-            if obj_keys == '__background__':
-                continue
-            if i == self.num_multimask_outputs:
-                print('Small Demo num mask tokens are not enough!')
-                ## SHAL BE REMOVED AFTER INCREASING MASK TOKEN NUMBER
-                continue
-            label = obj_values['label']
-            mask1 = seg_np == label
-            set_flag = np.any(mask1)
-            one_hot_mask[i] = torch.tensor(mask1, dtype=torch.uint8)
-            i += 1 if set_flag else 0
-        return one_hot_mask
+    def _convert_to_one_hot_mask(self, video_frames, video_frames_segmentation_mask):        
+        frame_obj_list = []
+        frames_segmentation_mask = []
+
+        # Iterate over the frames of a video
+        for frame_idx, frame in enumerate(video_frames):
+            # Open frame and segmentation mask as pillow image
+            im_frame = Image.open(frame).convert("RGB")
+            segmentation_mask = Image.open(video_frames_segmentation_mask[frame_idx]).convert("RGB")
+            seg_np = np.array(segmentation_mask)[:,:,0].T  # We only need one channel, transpose since numpy reverts the positions
+            
+            # Initialize one-hot-mask and obj list
+            one_hot_mask = torch.zeros((self.num_multimask_outputs , *segmentation_mask.size))
+            obj_list = []
+            
+            # Iterate over the object keys and values
+            i = 0
+            for obj_keys, obj_values in TRACK_TO_METAINFO.items():
+                if obj_keys == '__background__':
+                    continue
+                if i == self.num_multimask_outputs - 1:
+                    print('Small Demo num mask tokens are not enough!')
+                    ## SHAL BE REMOVED AFTER INCREASING MASK TOKEN NUMBER
+                    continue
+                # Get label, find regions with the label and set the mask
+                label = obj_values['label']
+                mask1 = seg_np == label
+                set_flag = np.any(mask1)
+                one_hot_mask[i] = torch.tensor(mask1, dtype=torch.uint8)
+                i += 1 if set_flag else 0  # if the object does not occur, do not increase
+                # Occupy obj_list with the objects in the scene
+                obj_list.append(Object(label, frame_idx, one_hot_mask[i]))
+
+            # Occupy the frames 
+            frame_obj_list.append(Frame(pil_to_tensor(im_frame), obj_list))
+            frames_segmentation_mask.append(segmentation_mask)
+        return frame_obj_list, frames_segmentation_mask
 
 
 if __name__ == '__main__':
