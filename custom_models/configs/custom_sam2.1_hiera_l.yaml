@@ -94,7 +94,7 @@ model:
   # apply scaled sigmoid on mask logits for memory encoder, and directly feed input mask as output mask
   sigmoid_scale_for_mem_enc: 20.0
   sigmoid_bias_for_mem_enc: -10.0
-  use_mask_input_as_output_without_sam: true
+  use_mask_input_as_output_without_sam: false
   # Memory
   directly_add_no_mem_embed: true
   no_obj_embed_spatial: true
@@ -122,5 +122,8 @@ model:
   use_mlp_for_obj_ptr_proj: true
   # Compilation flag
   compile_image_encoder: False
+  # Point BB Prompt Probabilty
+  prob_to_use_pt_input_for_train: 1.0
+  prob_to_use_box_input_for_train: 1.0  # Probabilty to use box is P(Point) * P(Box)
   # multimask output:= number masks
   num_multimask_outputs: 8

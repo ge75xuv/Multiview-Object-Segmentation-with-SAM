@@ -228,9 +228,14 @@ class SAM2Tune(customSAM2Base):
                 # During training # P(box) = prob_to_use_pt_input * prob_to_use_box_input
                 use_box_input = self.rng.random() < prob_to_use_box_input
                 if use_box_input:
-                    points, labels = sample_box_points(
-                        gt_masks_per_frame[t],
-                    )
+                    ## Generate Pseudo bounding boxes over the whole image
+                    # points, labels = sample_box_points(
+                    #     gt_masks_per_frame[t],
+                    # )
+                    O = gt_masks_per_frame[0].shape[0]
+                    W, H = gt_masks_per_frame[0].shape[-2:]
+                    points = torch.tensor([[0,0], [W,H]]).unsqueeze(0).tile((O,1,1))
+                    labels = torch.tensor([[2,3]]).tile((O,1))
                 else:
                     # (here we only sample **one initial point** on initial conditioning frames from the
                     # ground-truth mask; we may sample more correction points on the fly)

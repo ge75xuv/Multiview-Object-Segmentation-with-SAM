@@ -147,7 +147,10 @@ class MiniDataset(Dataset):
         video_frames = self.images[index]
         video_frames_segmentation_mask = self.segmentation_masks[index]
         frame_obj_list, frames_segmentation_mask = self._convert_to_one_hot_mask(video_frames, video_frames_segmentation_mask)
-        return frame_obj_list, frames_segmentation_mask
+        size_x_y = frames_segmentation_mask[0].size
+        video_datapoint = VideoDatapoint(frame_obj_list, index, size_x_y)
+        # return frame_obj_list, str(index), frames_segmentation_mask
+        return video_datapoint, frames_segmentation_mask
 
     def _convert_to_one_hot_mask(self, video_frames, video_frames_segmentation_mask):        
         frame_obj_list = []
@@ -179,11 +182,11 @@ class MiniDataset(Dataset):
                 set_flag = np.any(mask1)
                 one_hot_mask[i] = torch.tensor(mask1, dtype=torch.uint8)
                 i += 1 if set_flag else 0  # if the object does not occur, do not increase
-                # Occupy obj_list with the objects in the scene
+                # Occupy obj_list with the objects in the scene, !!!! the masks can be problematic but it will be solved anyways.
                 obj_list.append(Object(label, frame_idx, one_hot_mask[i]))
 
             # Occupy the frames 
-            frame_obj_list.append(Frame(pil_to_tensor(im_frame), obj_list))
+            frame_obj_list.append(Frame(pil_to_tensor(im_frame).type(torch.float32) / 255, obj_list))
             frames_segmentation_mask.append(segmentation_mask)
         return frame_obj_list, frames_segmentation_mask
 

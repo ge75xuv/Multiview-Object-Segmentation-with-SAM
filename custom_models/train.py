@@ -10,10 +10,10 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from training.utils.data_utils import collate_fn
 
 from .custom_model_builder import build_sam2
 from .dataset.mini_dataset import MiniDataset
+from .dataset.collate_fn import collate_fn
 # from loss_fns import *
 # from optimizer import *
 from .models.custom_sam2_tune import SAM2Tune
@@ -34,7 +34,7 @@ def train():
     valid_dataset = MiniDataset(split_type='val', num_multimask_outputs=num_multimask_outputs, len_video=len_video)
 
     # Show the data to test
-    debug = True
+    debug = False
     if debug:
         idx = np.random.random_integers(0, len(train_dataset))
         frame_obj_list, frames_segmentation_mask = train_dataset[idx]
@@ -79,13 +79,11 @@ def train():
         model.train()
         for data_t in train_loader:
             optimizer.zero_grad(set_to_none=True)
-            im = data_t[0].to(device)
-            seg_mask = data_t[1].to(device)
-            one_hot_mask = data_t[2].to(device)
-            output = model(im)
-            
+            batched_video_data = data_t[0].to(device)
+            seg_mask = data_t[1]  # List of PIL Image
+            output = model(batched_video_data)
             # Implement something like run_step as in trainer
-            loss(output, one_hot_mask)
+            loss(output, seg_mask)
             loss.backward()
             optimizer.step()
             writer.add_scalar("Loss/train", loss, epoch)
