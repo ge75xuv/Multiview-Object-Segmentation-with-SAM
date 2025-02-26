@@ -126,4 +126,4 @@ model:
   prob_to_use_pt_input_for_train: 1.0
   prob_to_use_box_input_for_train: 1.0  # Probabilty to use box is P(Point) * P(Box)
   # multimask output:= number masks
-  num_multimask_outputs: 8
+  num_multimask_outputs: 3

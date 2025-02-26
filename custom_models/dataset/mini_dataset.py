@@ -15,7 +15,7 @@ from ..helpers.configurations import *
 
 class MiniDataset(Dataset):
     
-    def __init__(self, split_type:str, num_multimask_outputs:int, len_video:int):
+    def __init__(self, split_type:str, len_video:int):
         '''Initialzie the class open the data folders and store them.
         TODO Data Augmentatation
         TODO Video Batches: DONE
@@ -28,7 +28,6 @@ class MiniDataset(Dataset):
         '''
         super().__init__()
         # Arguments
-        self.num_multimask_outputs = num_multimask_outputs
         self.len_video = len_video
 
         # Get root path and split folders
@@ -155,6 +154,8 @@ class MiniDataset(Dataset):
     def _convert_to_one_hot_mask(self, video_frames, video_frames_segmentation_mask):        
         frame_obj_list = []
         frames_segmentation_mask = []
+        # CHANGE THIS FLAG AFTER
+        debug = True
 
         # Iterate over the frames of a video
         for frame_idx, frame in enumerate(video_frames):
@@ -164,7 +165,6 @@ class MiniDataset(Dataset):
             seg_np = np.array(segmentation_mask)[:,:,0].T  # We only need one channel, transpose since numpy reverts the positions
             
             # Initialize one-hot-mask and obj list
-            one_hot_mask = torch.zeros((self.num_multimask_outputs , *segmentation_mask.size))
             obj_list = []
             
             # Iterate over the object keys and values
@@ -172,21 +172,19 @@ class MiniDataset(Dataset):
             for obj_keys, obj_values in TRACK_TO_METAINFO.items():
                 if obj_keys == '__background__':
                     continue
-                if i == self.num_multimask_outputs - 1:
-                    print('Small Demo num mask tokens are not enough!')
-                    ## SHAL BE REMOVED AFTER INCREASING MASK TOKEN NUMBER
-                    continue
+
                 # Get label, find regions with the label and set the mask
                 label = obj_values['label']
                 mask1 = seg_np == label
-                set_flag = np.any(mask1)
-                one_hot_mask[i] = torch.tensor(mask1, dtype=torch.uint8)
-                i += 1 if set_flag else 0  # if the object does not occur, do not increase
-                # Occupy obj_list with the objects in the scene, !!!! the masks can be problematic but it will be solved anyways.
-                obj_list.append(Object(label, frame_idx, one_hot_mask[i]))
+                mask1 = torch.tensor(mask1[:1024,:1024], dtype=torch.uint8) if debug else torch.tensor(mask1, dtype=torch.uint8)
 
-            # Occupy the frames 
-            frame_obj_list.append(Frame(pil_to_tensor(im_frame).type(torch.float32) / 255, obj_list))
+                # Occupy obj_list with the objects in the scene.
+                obj_list.append(Object(label, frame_idx, mask1))
+
+            # Occupy the frames
+            im_frame = pil_to_tensor(im_frame).type(torch.float32) / 255
+            im_frame = im_frame[:,:1024,:1024] if debug else im_frame
+            frame_obj_list.append(Frame(im_frame, obj_list))
             frames_segmentation_mask.append(segmentation_mask)
         return frame_obj_list, frames_segmentation_mask
 

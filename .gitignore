@@ -1,3 +1,5 @@
 models/*
 temp/*
 tb_logs/*
+custom_models/__pycache__/*
+custom_models/*/__pycache__/*

@@ -26,15 +26,15 @@ def train():
     lr = 1e-5
     shuffle = False
     num_multimask_outputs = 8  # This is num mask queries
-    len_video = 3
+    len_video = 2
     model_type = 'large'  #TODO add this as an option
 
     # Dataset
     train_dataset = MiniDataset(split_type='mini_train', num_multimask_outputs=num_multimask_outputs, len_video=len_video)
-    valid_dataset = MiniDataset(split_type='val', num_multimask_outputs=num_multimask_outputs, len_video=len_video)
+    valid_dataset = MiniDataset(split_type='mini_train', num_multimask_outputs=num_multimask_outputs, len_video=len_video)
 
     # Show the data to test
-    debug = False
+    debug = True
     if debug:
         idx = np.random.random_integers(0, len(train_dataset))
         frame_obj_list, frames_segmentation_mask = train_dataset[idx]
@@ -57,9 +57,9 @@ def train():
     # Model
     config = 'custom_sam2.1_hiera_l.yaml'  # This config is per default the trainSAM2
     ck = '/home/guests/tuna_gurbuz/prototype/models/sam2/checkpoints/sam2.1_hiera_large.pt'
- 
-    model = build_sam2(config, ck, mode='train')
-    device = model.device
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = build_sam2(config, ck, mode='train', _load_partial=False, device=device)
 
     # Optimizer and Loss
     optimizer = AdamW(model.parameters(), lr=lr)
@@ -82,6 +82,8 @@ def train():
             batched_video_data = data_t[0].to(device)
             seg_mask = data_t[1]  # List of PIL Image
             output = model(batched_video_data)
+            # What is the difference between
+            # multistep_pred_masks_high_res - multistep_pred_multimasks_high_res - pred_masks_high_res
             # Implement something like run_step as in trainer
             loss(output, seg_mask)
             loss.backward()

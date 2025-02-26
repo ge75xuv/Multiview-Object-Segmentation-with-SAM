@@ -38,23 +38,27 @@ def build_sam2(
     cfg = compose(config_name=config_file, overrides=hydra_overrides_extra)
     OmegaConf.resolve(cfg)
     model = instantiate(cfg.model, _recursive_=True)
-    _load_checkpoint(model, ckpt_path)
+    _load_checkpoint(model, ckpt_path, kwargs['_load_partial'])
     _remove_parameters_of_backbone(model)
     model = model.to(device)
     if mode == "eval":
         model.eval()
     return model
 
-def _load_checkpoint(model, ckpt_path):
+def _load_checkpoint(model, ckpt_path, _load_partial:bool=False):
     if ckpt_path is not None:
         sd = torch.load(ckpt_path, map_location="cpu", weights_only=True)["model"]
         # Clean the unused keywords from the loaded state dict
-        sd, ignored_keys = _find_keys_in_sd(sd)
+        if _load_partial:
+            sd, ignored_keys = _find_keys_in_sd(sd)
         # Load the weights
         missing_keys, unexpected_keys = model.load_state_dict(sd, strict=False)
         # Ignore the missing keys related to the mask decoder mlps
-        missing_keys = [ii for ii in missing_keys if ii not in ignored_keys]
+        if _load_partial:
+            missing_keys = [ii for ii in missing_keys if ii not in ignored_keys]
         missing_keys = [jj for jj in missing_keys if jj not in model.state_dict().keys()]
+        # The issue is that the missing keys return the keys that exist in the model but havent been found in the sd
+        # So the ones we remove (mask decoder 123) and also the ones we added newly(mask decoder 4-N).
         if missing_keys:
             logging.error(missing_keys)
             raise RuntimeError()
