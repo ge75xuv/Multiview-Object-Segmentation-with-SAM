@@ -38,12 +38,13 @@ def build_sam2(
     cfg = compose(config_name=config_file, overrides=hydra_overrides_extra)
     OmegaConf.resolve(cfg)
     model = instantiate(cfg.model, _recursive_=True)
+    loss = instantiate(cfg.loss, _recursive_=True)
     _load_checkpoint(model, ckpt_path, kwargs['_load_partial'])
     _remove_parameters_of_backbone(model)
     model = model.to(device)
     if mode == "eval":
         model.eval()
-    return model
+    return model, loss
 
 def _load_checkpoint(model, ckpt_path, _load_partial:bool=False):
     if ckpt_path is not None:

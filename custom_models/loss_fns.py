@@ -174,6 +174,7 @@ class MultiStepMultiMasksAndIous(nn.Module):
         num_objects = torch.clamp(num_objects / get_world_size(), min=1).item()
 
         losses = defaultdict(int)
+        # Iterate over the frames
         for outs, targets in zip(outs_batch, targets_batch):
             cur_losses = self._forward(outs, targets, num_objects)
             for k, v in cur_losses.items():
@@ -197,8 +198,8 @@ class MultiStepMultiMasksAndIous(nn.Module):
 
         target_masks = targets.unsqueeze(1).float()
         assert target_masks.dim() == 4  # [N, 1, H, W]
-        src_masks_list = outputs["multistep_pred_multimasks_high_res"]
-        ious_list = outputs["multistep_pred_ious"]
+        src_masks_list = outputs["multistep_pred_multimasks_high_res"]  # List[ [O,N,H,W],  ]
+        ious_list = outputs["multistep_pred_ious"]  # [O,3]
         object_score_logits_list = outputs["multistep_object_score_logits"]
 
         assert len(src_masks_list) == len(ious_list)
@@ -245,6 +246,7 @@ class MultiStepMultiMasksAndIous(nn.Module):
             target_obj = torch.any((target_masks[:, 0] > 0).flatten(1), dim=-1)[
                 ..., None
             ].float()
+        # target_obj is a 0 or 1 flag which decides if the object is in the scene
             loss_class = sigmoid_focal_loss(
                 object_score_logits,
                 target_obj,

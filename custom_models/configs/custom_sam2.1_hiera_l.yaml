@@ -124,6 +124,20 @@ model:
   compile_image_encoder: False
   # Point BB Prompt Probabilty
   prob_to_use_pt_input_for_train: 1.0
-  prob_to_use_box_input_for_train: 1.0  # Probabilty to use box is P(Point) * P(Box)
+  prob_to_use_box_input_for_train: 0.0  # Probabilty to use box is P(Point) * P(Box)
   # multimask output:= number masks
   num_multimask_outputs: 3
+
+# Loss
+loss:
+  _target_: custom_models.loss_fns.MultiStepMultiMasksAndIous
+  weight_dict:
+    loss_mask: 20
+    loss_dice: 1
+    loss_iou: 1
+    loss_class: 1
+  supervise_all_iou: true
+  iou_use_l1_loss: true
+  pred_obj_scores: true
+  focal_gamma_obj_score: 0.0
+  focal_alpha_obj_score: -1.0
