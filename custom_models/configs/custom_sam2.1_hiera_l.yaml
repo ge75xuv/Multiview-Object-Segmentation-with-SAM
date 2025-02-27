@@ -4,6 +4,15 @@
 hydra:
   verbose: true
 
+# Scratch
+scratch:
+  train_batch_size: 1
+  num_train_workers: 10
+  num_frames: 8
+  max_num_objects: 3
+  base_lr: 5.0e-6
+  vision_lr: 3.0e-06
+
 # Model
 model:
   _target_: custom_models.models.custom_sam2_tune.SAM2Tune
@@ -141,3 +150,50 @@ loss:
   pred_obj_scores: true
   focal_gamma_obj_score: 0.0
   focal_alpha_obj_score: -1.0
+
+optimizer:
+  _target_: torch.optim.AdamW
+
+trainer:
+  _target_: custom_models.trainer_optim.Trainer
+  optim:
+    amp:
+      enabled: True
+      amp_dtype: bfloat16
+
+    gradient_clip:
+      _target_: training.optimizer.GradientClipper
+      max_norm: 0.1
+      norm_type: 2
+
+    param_group_modifiers:
+      - _target_: training.optimizer.layer_decay_param_modifier
+        _partial_: True
+        layer_decay_value: 0.9
+        apply_to: 'image_encoder.trunk'
+        overrides:
+          - pattern: '*pos_embed*'
+            value: 1.0
+
+    options:
+      lr:
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.CosineParamScheduler
+            start_value: ${scratch.base_lr}
+            end_value: ${divide:${scratch.base_lr},10}
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.CosineParamScheduler
+            start_value: ${scratch.vision_lr}
+            end_value: ${divide:${scratch.vision_lr},10}
+          param_names:
+            - 'image_encoder.*'
+      weight_decay:
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.ConstantParamScheduler
+            value: 0.1
+        - scheduler:
+            _target_: fvcore.common.param_scheduler.ConstantParamScheduler
+            value: 0.0
+          param_names:
+            - '*bias*'
+          module_cls_names: ['torch.nn.LayerNorm']

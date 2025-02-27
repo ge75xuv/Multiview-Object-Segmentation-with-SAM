@@ -36,15 +36,25 @@ def build_sam2(
         ]
     # Read config and init model
     cfg = compose(config_name=config_file, overrides=hydra_overrides_extra)
+    # Register new operation becaise of learning rate
+    OmegaConf.register_new_resolver("divide", lambda x, y: x / y)
+    # Resolve
     OmegaConf.resolve(cfg)
+    # Instantiate model, loss, load weights, freeze backbone
     model = instantiate(cfg.model, _recursive_=True)
     loss = instantiate(cfg.loss, _recursive_=True)
     _load_checkpoint(model, ckpt_path, kwargs['_load_partial'])
     _remove_parameters_of_backbone(model)
+    # Load custom trainer only for the purpose of schedulers for the optimizer
+    trainer = instantiate(cfg.trainer, model=model)
+    optimizer = instantiate(cfg.optimizer, params=model.parameters())
+    trainer._construct_optimizers(optimizer)
+    optim = trainer.optim
+    # send model to device
     model = model.to(device)
     if mode == "eval":
         model.eval()
-    return model, loss
+    return model, loss, optim
 
 def _load_checkpoint(model, ckpt_path, _load_partial:bool=False):
     if ckpt_path is not None:

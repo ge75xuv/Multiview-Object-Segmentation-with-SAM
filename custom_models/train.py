@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import yaml
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -18,15 +19,13 @@ from .custom_model_builder import build_sam2
 from .dataset.mini_dataset import MiniDataset
 from .dataset.collate_fn import collate_fn
 from .helpers.configurations import TRACK_TO_METAINFO
-# from optimizer import *
-from .process_output import process_output
  
 
 def train():
     # Hyperparameters
     epochs = 1
     batch_size = 1
-    lr = 1e-5
+    lr = 5e-6
     shuffle = False
     len_objects = len(TRACK_TO_METAINFO.keys())
     len_video = 2
@@ -77,23 +76,17 @@ def train():
     ck = '/home/guests/tuna_gurbuz/prototype/models/sam2/checkpoints/sam2.1_hiera_large.pt'
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    iters_per_epoch = len(train_loader)
     print(f'Device: {device}\n')
-    print(f'Length of the dataloader: {len(train_loader)}\n')
-    model, loss = build_sam2(config, ck, mode='train', _load_partial=False, device=device)
+    print(f'Length of the dataloader: {iters_per_epoch}\n')
+    model, loss, optim = build_sam2(config, ck, mode='train', _load_partial=False, device=device)
 
-    # Optimizer and Loss
-    optimizer = AdamW(model.parameters(), lr=lr)
     scaler = GradScaler(device=device, enabled=True, )
     gradient_clipper = GradientClipper(max_norm=0.1, norm_type=2)
     # !!!!! CHECK OPTIMCONF in the trainer they made everything float16 
     # with torch.cuda.amp.autocast( 
     # loss = MultiStepMultiMasksAndIous()  # Initialized with the model
-    
-    # Initialize the loss
-    train_loss = 0
-    val_loss = 0
-    epoch_train_loss = []
-    epoch_val_loss = []
+    where = 0
     
     # Initialize the writer
     writer = SummaryWriter(log_dir='tb_logs')
@@ -102,7 +95,7 @@ def train():
     for epoch in tqdm(range(epochs), ncols=50):
         model.train()
         for idx_t, data_t in enumerate(train_loader):
-            optimizer.zero_grad(set_to_none=True)
+            optim.optimizer.zero_grad(set_to_none=True)
             batched_video_data = data_t[0].to(device)
             seg_mask = data_t[1]  # List of PIL Image for debug
             masks = data_t[0].masks.to(device)
@@ -114,12 +107,19 @@ def train():
             iter_loss = loss_dict['core_loss']
             scaler.scale(iter_loss).backward()
             # They use core loss for backprop and use others for logging, see _log_loss_detailed_and_return_core_loss()
+            exact_epoch = epoch + float(idx_t) / iters_per_epoch
+            where = float(exact_epoch) / epochs
+            assert where <= 1 + 1e-5
+            if where < 1.0:
+                optim.step_schedulers(
+                    where, step=int(exact_epoch * iters_per_epoch)
+                )
             if gradient_clipper is not None:
-                scaler.unscale_(optimizer)
+                scaler.unscale_(optim.optimizer)
                 gradient_clipper(model=model)
             # Optimizer step: the scaler will make sure gradients are not
             # applied if the gradients are infinite
-            scaler.step(optimizer)
+            scaler.step(optim.optimizer)
             scaler.update()
             writer.add_scalar("Loss/train", iter_loss, epoch)
             print(f'Epoch: {epoch}\nIter: {idx_t}')

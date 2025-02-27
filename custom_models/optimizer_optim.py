@@ -298,7 +298,7 @@ def get_module_cls_to_param_names(
 
 def construct_optimizer(
     model: torch.nn.Module,
-    optimizer_conf: Any,
+    optimizer: torch.optim.Optimizer,
     options_conf: Mapping[str, List] = None,
     param_group_modifiers_conf: List[Callable] = None,
     param_allowlist: Optional[Set[str]] = None,
@@ -334,10 +334,6 @@ def construct_optimizer(
         if name in param_allowlist
     }
 
-    if not options_conf:
-        optimizer = hydra.utils.instantiate(optimizer_conf, named_parameters.values())
-        return Optimizer(optimizer)
-
     all_parameter_names = {
         name for name, _ in model.named_parameters() if name in param_allowlist
     }
@@ -356,7 +352,8 @@ def construct_optimizer(
         set_default_parameters(scheduler_cfgs, all_parameter_names)
         all_scheduler_cfgs.append(scheduler_cfgs)
 
-    if param_group_modifiers_conf:
+    # We dont need it since it is related to the encoder trunk
+    if param_group_modifiers_conf and False:
         for custom_param_modifier in param_group_modifiers_conf:
             custom_param_modifier = hydra.utils.instantiate(custom_param_modifier)
             all_scheduler_cfgs = custom_param_modifier(
@@ -367,7 +364,7 @@ def construct_optimizer(
     )
     if validate_param_groups:
         validate_param_group_params(param_groups, model)
-    optimizer = hydra.utils.instantiate(optimizer_conf, param_groups)
+    # Instead of instantiating the optimizer with hydra, we pass it inside seperately
     return Optimizer(optimizer, schedulers)
 
 
