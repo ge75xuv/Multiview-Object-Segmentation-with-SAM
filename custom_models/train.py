@@ -102,8 +102,6 @@ def train():
     for epoch in tqdm(range(epochs), ncols=50):
         model.train()
         for idx_t, data_t in enumerate(train_loader):
-            if idx_t > 10:
-                break
             optimizer.zero_grad(set_to_none=True)
             batched_video_data = data_t[0].to(device)
             seg_mask = data_t[1]  # List of PIL Image for debug
@@ -130,8 +128,6 @@ def train():
         model.eval()
         with torch.no_grad():
             for idx_v, data_v in enumerate(valid_loader):
-                if idx_v > 10:
-                    break
                 batched_video_data_val = data_v[0].to(device)
                 seg_mask = data_v[1]  # List of PIL Image for debug
                 masks_val = data_v[0].masks.to(device)
