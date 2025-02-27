@@ -174,6 +174,8 @@ class MiniDataset(Dataset):
                     continue
 
                 # Get label, find regions with the label and set the mask
+                # This would absolutely work here
+                # correct_class_probs = softmax_probs.gather(1, labels.unsqueeze(1)).squeeze(1)
                 label = obj_values['label']
                 mask1 = seg_np == label
                 mask1 = torch.tensor(mask1[:1024,:1024], dtype=torch.uint8) if debug else torch.tensor(mask1, dtype=torch.uint8)
