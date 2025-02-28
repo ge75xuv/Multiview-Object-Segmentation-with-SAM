@@ -1,9 +1,5 @@
 # @package _global_
 
-# Hydra
-hydra:
-  verbose: true
-
 # Scratch
 scratch:
   train_batch_size: 1
@@ -13,6 +9,7 @@ scratch:
   base_lr: 5.0e-6
   vision_lr: 3.0e-06
 
+
 # Model
 model:
   _target_: custom_models.models.custom_sam2_tune.SAM2Tune
@@ -21,12 +18,11 @@ model:
     scalp: 1
     trunk:
       _target_: sam2.modeling.backbones.hieradet.Hiera
-      embed_dim: 144
-      num_heads: 2
-      stages: [2, 6, 36, 4]
-      global_att_blocks: [23, 33, 43]
+      embed_dim: 96
+      num_heads: 1
+      stages: [1, 2, 11, 2]
+      global_att_blocks: [7, 10, 13]
       window_pos_embed_bkg_spatial_size: [7, 7]
-      window_spec: [8, 4, 16, 8]
     neck:
       _target_: sam2.modeling.backbones.image_encoder.FpnNeck
       position_encoding:
@@ -36,7 +32,7 @@ model:
         scale: null
         temperature: 10000
       d_model: 256
-      backbone_channel_list: [1152, 576, 288, 144]
+      backbone_channel_list: [768, 384, 192, 96]
       fpn_top_down_levels: [2, 3]  # output level 0 and 1 directly use the backbone features
       fpn_interp_model: nearest
 
@@ -99,7 +95,7 @@ model:
         num_layers: 2
 
   num_maskmem: 7
-  image_size: 2048
+  image_size: 1024
   # apply scaled sigmoid on mask logits for memory encoder, and directly feed input mask as output mask
   sigmoid_scale_for_mem_enc: 20.0
   sigmoid_bias_for_mem_enc: -10.0
@@ -131,7 +127,7 @@ model:
   use_mlp_for_obj_ptr_proj: true
   # Compilation flag
   compile_image_encoder: False
-  # Point BB Prompt Probabilty CHANGED AFTER
+  # Point BB Prompt Probabilty
   prob_to_use_pt_input_for_train: 1.0
   prob_to_use_box_input_for_train: 0.0  # Probabilty to use box is P(Point) * P(Box)
   # multimask output:= number masks

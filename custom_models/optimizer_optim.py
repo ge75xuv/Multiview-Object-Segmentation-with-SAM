@@ -298,7 +298,7 @@ def get_module_cls_to_param_names(
 
 def construct_optimizer(
     model: torch.nn.Module,
-    optimizer: torch.optim.Optimizer,
+    optimizer_conf: Any,
     options_conf: Mapping[str, List] = None,
     param_group_modifiers_conf: List[Callable] = None,
     param_allowlist: Optional[Set[str]] = None,
@@ -364,7 +364,7 @@ def construct_optimizer(
     )
     if validate_param_groups:
         validate_param_group_params(param_groups, model)
-    # Instead of instantiating the optimizer with hydra, we pass it inside seperately
+    optimizer = hydra.utils.instantiate(optimizer_conf, param_groups)
     return Optimizer(optimizer, schedulers)
 
 

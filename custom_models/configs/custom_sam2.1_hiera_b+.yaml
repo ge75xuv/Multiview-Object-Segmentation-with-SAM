@@ -1,9 +1,5 @@
 # @package _global_
 
-# Hydra
-hydra:
-  verbose: true
-
 # Scratch
 scratch:
   train_batch_size: 1
@@ -21,12 +17,8 @@ model:
     scalp: 1
     trunk:
       _target_: sam2.modeling.backbones.hieradet.Hiera
-      embed_dim: 144
+      embed_dim: 112
       num_heads: 2
-      stages: [2, 6, 36, 4]
-      global_att_blocks: [23, 33, 43]
-      window_pos_embed_bkg_spatial_size: [7, 7]
-      window_spec: [8, 4, 16, 8]
     neck:
       _target_: sam2.modeling.backbones.image_encoder.FpnNeck
       position_encoding:
@@ -36,7 +28,7 @@ model:
         scale: null
         temperature: 10000
       d_model: 256
-      backbone_channel_list: [1152, 576, 288, 144]
+      backbone_channel_list: [896, 448, 224, 112]
       fpn_top_down_levels: [2, 3]  # output level 0 and 1 directly use the backbone features
       fpn_interp_model: nearest
 
@@ -99,11 +91,11 @@ model:
         num_layers: 2
 
   num_maskmem: 7
-  image_size: 2048
+  image_size: 2048  # changed
   # apply scaled sigmoid on mask logits for memory encoder, and directly feed input mask as output mask
   sigmoid_scale_for_mem_enc: 20.0
   sigmoid_bias_for_mem_enc: -10.0
-  use_mask_input_as_output_without_sam: false  # Changed
+  use_mask_input_as_output_without_sam: false  # changed
   # Memory
   directly_add_no_mem_embed: true
   no_obj_embed_spatial: true
@@ -131,7 +123,7 @@ model:
   use_mlp_for_obj_ptr_proj: true
   # Compilation flag
   compile_image_encoder: False
-  # Point BB Prompt Probabilty CHANGED AFTER
+  # Point BB Prompt Probabilty  CHANGED AFTER
   prob_to_use_pt_input_for_train: 1.0
   prob_to_use_box_input_for_train: 0.0  # Probabilty to use box is P(Point) * P(Box)
   # multimask output:= number masks

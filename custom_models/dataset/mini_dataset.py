@@ -7,7 +7,7 @@ from PIL import Image
 import torch
 from torch.utils.data import Dataset
 import torchvision
-from torchvision.transforms.functional import pil_to_tensor
+from torchvision.transforms import ToTensor, Resize
 from training.utils.data_utils import Object, Frame, VideoDatapoint
 from tqdm import tqdm
 
@@ -15,7 +15,7 @@ from ..helpers.configurations import *
 
 class MiniDataset(Dataset):
     
-    def __init__(self, split_type:str, len_video:int):
+    def __init__(self, split_type:str, len_video:int, input_image_size:int):
         '''Initialzie the class open the data folders and store them.
         TODO Data Augmentatation
         TODO Video Batches: DONE
@@ -29,6 +29,9 @@ class MiniDataset(Dataset):
         super().__init__()
         # Arguments
         self.len_video = len_video
+        self.to_tensor = ToTensor()
+        self.resize_image = Resize([768, 1024])
+        self.input_image_size = input_image_size
 
         # Get root path and split folders
         root_path = MMOR_DATA_ROOT_PATH
@@ -146,7 +149,7 @@ class MiniDataset(Dataset):
         video_frames = self.images[index]
         video_frames_segmentation_mask = self.segmentation_masks[index]
         frame_obj_list, frames_segmentation_mask = self._convert_to_one_hot_mask(video_frames, video_frames_segmentation_mask)
-        size_x_y = frames_segmentation_mask[0].size
+        size_x_y = frame_obj_list[0].data.shape[-2:]
         video_datapoint = VideoDatapoint(frame_obj_list, index, size_x_y)
         # return frame_obj_list, str(index), frames_segmentation_mask
         return video_datapoint, frames_segmentation_mask
@@ -154,15 +157,13 @@ class MiniDataset(Dataset):
     def _convert_to_one_hot_mask(self, video_frames, video_frames_segmentation_mask):        
         frame_obj_list = []
         frames_segmentation_mask = []
-        # CHANGE THIS FLAG AFTER
-        debug = True
 
         # Iterate over the frames of a video
         for frame_idx, frame in enumerate(video_frames):
             # Open frame and segmentation mask as pillow image
             im_frame = Image.open(frame).convert("RGB")
             segmentation_mask = Image.open(video_frames_segmentation_mask[frame_idx]).convert("RGB")
-            seg_np = np.array(segmentation_mask)[:,:,0].T  # We only need one channel, transpose since numpy reverts the positions
+            seg_np = np.array(segmentation_mask)[:,:,0]  # We only need one channel, transpose since numpy reverts the positions
             
             # Initialize one-hot-mask and obj list
             obj_list = []
@@ -172,23 +173,29 @@ class MiniDataset(Dataset):
             for obj_keys, obj_values in TRACK_TO_METAINFO.items():
                 if obj_keys == '__background__':
                     continue
-
                 # Get label, find regions with the label and set the mask
                 # This would absolutely work here
                 # correct_class_probs = softmax_probs.gather(1, labels.unsqueeze(1)).squeeze(1)
                 label = obj_values['label']
                 mask1 = seg_np == label
-                mask1 = torch.tensor(mask1[:1024,:1024], dtype=torch.uint8) if debug else torch.tensor(mask1, dtype=torch.uint8)
+                mask1 = self.resize_image(torch.tensor(mask1[None,:,:], dtype=torch.bool))
+                mask1 = self._add_padding(mask1.type(torch.uint8), self.input_image_size).squeeze(0)
 
                 # Occupy obj_list with the objects in the scene.
                 obj_list.append(Object(label, frame_idx, mask1))
 
             # Occupy the frames
-            im_frame = pil_to_tensor(im_frame).type(torch.float32) / 255
-            im_frame = im_frame[:,:1024,:1024] if debug else im_frame
+            im_frame = self.resize_image(self.to_tensor(im_frame))
+            im_frame = self._add_padding(im_frame, self.input_image_size)
             frame_obj_list.append(Frame(im_frame, obj_list))
             frames_segmentation_mask.append(segmentation_mask)
         return frame_obj_list, frames_segmentation_mask
+
+    def _add_padding(self, input_image:torch.Tensor, out_shape:int):
+        H = out_shape - input_image.shape[-2]
+        out_image = torch.zeros([input_image.shape[0], out_shape, out_shape])
+        out_image[:, H//2:-H//2, :] = input_image
+        return out_image
 
 
 if __name__ == '__main__':

@@ -40,6 +40,7 @@ def build_sam2(
     OmegaConf.register_new_resolver("divide", lambda x, y: x / y)
     # Resolve
     OmegaConf.resolve(cfg)
+    print(f'OmegaConf resolved successfully')
     # Instantiate model, loss, load weights, freeze backbone
     model = instantiate(cfg.model, _recursive_=True)
     loss = instantiate(cfg.loss, _recursive_=True)
@@ -47,8 +48,7 @@ def build_sam2(
     _remove_parameters_of_backbone(model)
     # Load custom trainer only for the purpose of schedulers for the optimizer
     trainer = instantiate(cfg.trainer, model=model)
-    optimizer = instantiate(cfg.optimizer, params=model.parameters())
-    trainer._construct_optimizers(optimizer)
+    trainer._construct_optimizers(cfg.optimizer)
     optim = trainer.optim
     # send model to device
     model = model.to(device)
@@ -67,7 +67,7 @@ def _load_checkpoint(model, ckpt_path, _load_partial:bool=False):
         # Ignore the missing keys related to the mask decoder mlps
         if _load_partial:
             missing_keys = [ii for ii in missing_keys if ii not in ignored_keys]
-        missing_keys = [jj for jj in missing_keys if jj not in model.state_dict().keys()]
+            missing_keys = [jj for jj in missing_keys if jj not in model.state_dict().keys()]
         # The issue is that the missing keys return the keys that exist in the model but havent been found in the sd
         # So the ones we remove (mask decoder 123) and also the ones we added newly(mask decoder 4-N).
         if missing_keys:
