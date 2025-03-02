@@ -39,7 +39,7 @@ model_size_dict = {
 
 def train():
     # Hyperparameters
-    epochs = 1
+    epochs = 10
     batch_size = 1
     lr = 5e-6
     shuffle = False
@@ -49,8 +49,8 @@ def train():
     input_image_size = 1024
 
     # Dataset
-    train_dataset = MiniDataset(split_type='mini_train', len_video=len_video, input_image_size=input_image_size)
-    valid_dataset = MiniDataset(split_type='mini_train', len_video=len_video, input_image_size=input_image_size)
+    train_dataset = MiniDataset(split_type='small_train', len_video=len_video, input_image_size=input_image_size)
+    valid_dataset = MiniDataset(split_type='val', len_video=len_video, input_image_size=input_image_size)
 
     # Show the data to test
     debug = False
@@ -73,7 +73,7 @@ def train():
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_fn)
     valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
 
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    device = "cuda:1" if torch.cuda.is_available() else "cpu"
     autocast_dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float16
     iters_per_epoch = len(train_loader)
     print(f'Device: {device}\n')
@@ -88,13 +88,14 @@ def train():
     where = 0
     
     # Initialize the writer
-    writer = SummaryWriter(log_dir='tb_logs/')
+    start_time = time.strftime('%m_%d_%H_%M', time.gmtime())
+    writer = SummaryWriter(log_dir=f'tb_logs/{start_time}')
 
     # Iterate
     print(f'Training starts for {epochs} epochs!')
-    for epoch in tqdm(range(epochs), ncols=50):
+    for epoch in range(epochs):
         model.train()
-        for idx_t, data_t in enumerate(train_loader):
+        for idx_t, data_t in tqdm(enumerate(train_loader), ncols=100):
             optim.optimizer.zero_grad(set_to_none=True)
             batched_video_data = data_t[0].to(device)
             seg_mask = data_t[1]  # List of PIL Image for debug
@@ -105,10 +106,10 @@ def train():
                 dtype=autocast_dtype,
             ):
                 all_frame_outputs = model(batched_video_data)
+                loss_dict = loss(all_frame_outputs, masks)
             # What is the difference between
             # multistep_pred_masks_high_res - multistep_pred_multimasks_high_res - pred_masks_high_res
             # the loss handles it itself technically multimask refers to all 3 estimations
-            loss_dict = loss(all_frame_outputs, masks)
             iter_loss = loss_dict['core_loss']
             scaler.scale(iter_loss).backward()
             # They use core loss for backprop and use others for logging, see _log_loss_detailed_and_return_core_loss()
@@ -143,8 +144,7 @@ def train():
         writer.flush()
         writer.close()
         # Save the model weights
-        strf = time.strftime('%m_%d_%H_%M', time.gmtime())
-        save_path = f'custom_models/finetune_checkpoints/model{strf}.pt'
+        save_path = f'custom_models/finetune_checkpoints/model{start_time}.pt'
         torch.save(model.state_dict(), save_path)
 
 
