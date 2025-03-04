@@ -9,6 +9,7 @@ import os
 import random
 import sys
 import traceback
+import time
 from argparse import ArgumentParser
 
 import submitit
@@ -123,8 +124,9 @@ def add_pythonpath_to_sys_path():
 def main(args) -> None:
     cfg = compose(config_name=args.config)
     if cfg.launcher.experiment_log_dir is None:
+        start_time = time.strftime('%m_%d_%H_%M', time.gmtime())
         cfg.launcher.experiment_log_dir = os.path.join(
-            os.getcwd(), "sam2_logs", args.config
+            os.getcwd(), "sam2_logs", start_time
         )
     print("###################### Train App Config ####################")
     print(OmegaConf.to_yaml(cfg))

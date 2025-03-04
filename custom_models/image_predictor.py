@@ -1,10 +1,10 @@
 from hydra import initialize
-initialize(version_base=None, config_path="./configs", job_name="predict_run")
+initialize(version_base=None, config_path="../sam2_logs/sam2.1_hiera_b+_promptless.yaml/", job_name="predict_run")
+
 import matplotlib.pyplot as plt
 import numpy as np
 from omegaconf import OmegaConf
-OmegaConf.register_new_resolver("divide", lambda x, y: x / y)
-from sam2.build_sam import build_sam2
+# from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 import torch
 from torchvision.transforms import ToPILImage, ToTensor
@@ -13,11 +13,11 @@ from .helpers.configurations import TRACK_TO_METAINFO
 from .dataset.collate_fn import collate_fn
 from .dataset.mini_dataset import MiniDataset
 from .debugging.show import *
-# from .custom_model_builder import build_sam2
+from .custom_model_builder import build_sam2_predict
 
 model_size_dict = {
     'base': {
-        'config': 'custom_sam2.1_hiera_b+.yaml',
+        'config': 'config.yaml',
         'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/sam2.1_hiera_b+_promptless.yaml/checkpoints/checkpoint.pt',
         },
 }
@@ -32,8 +32,17 @@ def predict():
     model_size = 'base'
     config = model_size_dict[model_size]['config']
     ck = model_size_dict[model_size]['ck']
-    submodel = build_sam2(config, ck, 'cpu')
+    # submodel = build_sam2(config, ck, 'cpu')
+    submodel = build_sam2_predict(config, ck)
     im_pred = SAM2ImagePredictor(submodel)
+    im_pred._bb_feat_sizes = [
+            (128, 128),
+            (64, 64),
+            (32, 32),
+        ]
+
+    #TODO set the input_image_size and len_objects from the config yaml, especially the latter since we are gonna play around with it
+    #TODO the base config we need, can also have varying configuration parameters like resolution, it is really shitty 
 
     # Dataset
     len_video = 1
@@ -58,7 +67,6 @@ def predict():
                 break
             image = frame_obj_list.frames[i].data
             segmentation_mask = frames_segmentation_mask[i]
-            # Images are double precision tensors so we multiply 255 and convert to numpy uint8
             image = toPILimage(image)
             image.save(f'temp/image{i}.png')
             segmentation_mask.save(f'temp/segmentation_mask{i}.png')
@@ -81,11 +89,13 @@ def predict():
     point_labels=labels,
     multimask_output=True,
 )
-    sorted_ind = np.argsort(scores)[::-1]
-    masks = masks[sorted_ind]
-    scores = scores[sorted_ind]
-    logits = logits[sorted_ind]
-    show_masks(image, masks, scores, point_coords=points, input_labels=labels, borders=False)
+    sorted_ind = np.argsort(scores, axis=1)[:,-1]
+    obj_ind = np.arange(3)
+    best_masks = masks[obj_ind,sorted_ind]
+    best_scores = scores[obj_ind,sorted_ind]
+    best_logits = logits[obj_ind,sorted_ind]
+    for idx, mask in enumerate(best_masks):
+        toPILimage((mask*255).astype(np.uint8)).save(f'temp/est_mask{idx}.png')
 
 if __name__ == '__main__':
     predict()

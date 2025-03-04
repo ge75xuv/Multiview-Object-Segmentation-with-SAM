@@ -4,8 +4,8 @@ scratch:
   resolution: 512
   train_batch_size: 1
   num_train_workers: 10
-  num_frames: 8
-  max_num_objects: 3
+  # num_frames: 8
+  # max_num_objects: 3
   base_lr: 5.0e-6
   vision_lr: 3.0e-06
   # phases_per_epoch: 1
@@ -156,7 +156,7 @@ trainer:
     # use high-resolution feature map in the SAM mask decoder
     use_high_res_features_in_sam: true
     # output 3 masks on the first click on initial conditioning frames
-    multimask_output_in_sam: true
+    multimask_output_in_sam: false
     # SAM heads
     iou_prediction_use_sigmoid: True
     # cross-attend to object pointers from other frames (based on SAM output tokens) in the encoder
@@ -170,8 +170,8 @@ trainer:
     pred_obj_scores_mlp: true
     fixed_no_obj_ptr: true
     # multimask tracking settings
-    multimask_output_for_tracking: true
-    use_multimask_token_for_obj_ptr: true
+    multimask_output_for_tracking: false
+    use_multimask_token_for_obj_ptr: false
     multimask_min_pt_num: 0
     multimask_max_pt_num: 1
     use_mlp_for_obj_ptr_proj: true

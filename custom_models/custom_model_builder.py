@@ -10,7 +10,9 @@ import re
 
 from hydra import compose, initialize
 from hydra.utils import instantiate
-initialize(version_base=None, config_path="./configs", job_name="train_run")
+from hydra.core.global_hydra import GlobalHydra
+if not GlobalHydra.instance().is_initialized():
+    initialize(version_base=None, config_path="./configs", job_name="train_run")
 from omegaconf import OmegaConf
 import torch
 import torch.nn as nn
@@ -55,6 +57,39 @@ def build_sam2(
     if mode == "eval":
         model.eval()
     return model, loss, optim
+
+def build_sam2_predict(
+    config_file,
+    ckpt_path=None,
+    device="cuda",
+    mode="eval",
+    hydra_overrides_extra=[],
+    apply_postprocessing=True,
+    **kwargs,
+):
+
+    if apply_postprocessing:
+        hydra_overrides_extra = hydra_overrides_extra.copy()
+        hydra_overrides_extra += [
+            # dynamically fall back to multi-mask if the single mask is not stable
+            "++model.sam_mask_decoder_extra_args.dynamic_multimask_via_stability=true",
+            "++model.sam_mask_decoder_extra_args.dynamic_multimask_stability_delta=0.05",
+            "++model.sam_mask_decoder_extra_args.dynamic_multimask_stability_thresh=0.98",
+        ]
+    # Read config and init model
+    cfg = compose(config_name=config_file, overrides=hydra_overrides_extra)
+    # Register new operation becaise of learning rate
+    OmegaConf.register_new_resolver("divide", lambda x, y: x / y)
+    # Resolve
+    OmegaConf.resolve(cfg)
+    print(f'OmegaConf resolved successfully')
+    # Instantiate model, loss, load weights, freeze backbone
+    model = instantiate(cfg.trainer.model, _recursive_=True)
+    _load_checkpoint(model, ckpt_path, False)
+    # send model to device
+    model = model.to(device)
+    model.eval()
+    return model
 
 def _load_checkpoint(model, ckpt_path, _load_partial:bool=False):
     if ckpt_path is not None:
