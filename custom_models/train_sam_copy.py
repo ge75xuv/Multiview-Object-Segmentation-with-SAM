@@ -248,23 +248,23 @@ if __name__ == "__main__":
     parser.add_argument(
         "-c",
         "--config",
-        default='sam2.1_hiera_b+_MOSE_finetune.yaml',
+        default='sam2.1_hiera_b+_promptless.yaml',
         type=str,
-        help="path to config file (e.g. configs/sam2.1_training/sam2.1_hiera_b+_MOSE_finetune.yaml)",
+        help="path to config file (e.g. configs/sam2.1_training/sam2.1_hiera_b+_promptless.yaml)",
     )
     parser.add_argument(
         "--use-cluster",
         type=int,
-        default=None,
+        default=0,
         help="whether to launch on a cluster, 0: run locally, 1: run on a cluster",
     )
     parser.add_argument("--partition", type=str, default=None, help="SLURM partition")
     parser.add_argument("--account", type=str, default=None, help="SLURM account")
     parser.add_argument("--qos", type=str, default=None, help="SLURM qos")
     parser.add_argument(
-        "--num-gpus", type=int, default=None, help="number of GPUS per node"
+        "--num-gpus", type=int, default=1, help="number of GPUS per node"
     )
-    parser.add_argument("--num-nodes", type=int, default=None, help="Number of nodes")
+    parser.add_argument("--num-nodes", type=int, default=1, help="Number of nodes")
     args = parser.parse_args()
     args.use_cluster = bool(args.use_cluster) if args.use_cluster is not None else None
     register_omegaconf_resolvers()

@@ -5,7 +5,7 @@ import re
 import numpy as np
 from PIL import Image
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 import torchvision
 from torchvision.transforms import ToTensor, Resize
 from training.utils.data_utils import Object, Frame, VideoDatapoint
@@ -15,7 +15,14 @@ from ..helpers.configurations import *
 
 class MiniDataset(Dataset):
     
-    def __init__(self, split_type:str, len_video:int, input_image_size:int):
+    def __init__(self,
+                 split_type:str,
+                 len_video:int,
+                 input_image_size:int,
+                 collate_fn,
+                 batch_size:int=1,
+                 shuffle:bool=1,
+                 **kwargs):
         '''Initialzie the class open the data folders and store them.
         TODO Data Augmentatation
         TODO Video Batches: DONE
@@ -32,6 +39,12 @@ class MiniDataset(Dataset):
         self.to_tensor = ToTensor()
         self.resize_image = Resize([768, 1024])
         self.input_image_size = input_image_size
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+        self.collate_fn=collate_fn
+        
+        # Adjustment for the trainer
+        self.get_seg_mask = kwargs.get('get_seg_mask', False)
 
         # Get root path and split folders
         root_path = MMOR_DATA_ROOT_PATH
@@ -151,8 +164,9 @@ class MiniDataset(Dataset):
         frame_obj_list, frames_segmentation_mask = self._convert_to_one_hot_mask(video_frames, video_frames_segmentation_mask)
         size_x_y = frame_obj_list[0].data.shape[-2:]
         video_datapoint = VideoDatapoint(frame_obj_list, index, size_x_y)
-        # return frame_obj_list, str(index), frames_segmentation_mask
-        return video_datapoint, frames_segmentation_mask
+        if self.get_seg_mask:
+            return video_datapoint, frames_segmentation_mask
+        return video_datapoint
 
     def _convert_to_one_hot_mask(self, video_frames, video_frames_segmentation_mask):        
         frame_obj_list = []
@@ -197,6 +211,11 @@ class MiniDataset(Dataset):
         out_image[:, H//2:-H//2, :] = input_image
         return out_image
 
+    def get_loader(self, **kwargs):
+        return DataLoader(self, batch_size=self.batch_size, shuffle=self.shuffle, collate_fn=self.collate_fn)
+
+    def load_checkpoint_state(*args, **kwargs):
+        pass
 
 if __name__ == '__main__':
     md = MiniDataset("small_train")

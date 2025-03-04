@@ -13,7 +13,7 @@
             "console": "integratedTerminal",
             // "module": "custom_models.dataset.mini_dataset",
             "module": "custom_models.train_sam_copy",
-            // "module": "models.sam2.training.train.py",
+            // "module": "models.sam2.training.train",
             // "args": ["-c models/sam2/sam2/configs/sam2.1_training/sam2.1_hiera_b+_MOSE_finetune.yaml"],
             "justMyCode": false,
         }

@@ -62,7 +62,7 @@ trainer:
   seed_value: 123
 
   model:
-    _target_: models.custom_sam2_tune.SAM2Tune
+    _target_: custom_models.models.custom_sam2_tune.SAM2Tune
     image_encoder:
       _target_: sam2.modeling.backbones.image_encoder.ImageEncoder
       scalp: 1
@@ -178,17 +178,17 @@ trainer:
 
     ####### Training specific params #######
     # box/point input and corrections
-    prob_to_use_pt_input_for_train: 0.5
-    prob_to_use_pt_input_for_eval: 0.0
-    prob_to_use_box_input_for_train: 0.5  # 0.5*0.5 = 0.25 prob to use box instead of points
+    prob_to_use_pt_input_for_train: 1.0
+    prob_to_use_pt_input_for_eval: 1.0
+    prob_to_use_box_input_for_train: 0.0  # 0.5*0.5 = 0.25 prob to use box instead of points
     prob_to_use_box_input_for_eval: 0.0
     prob_to_sample_from_gt_for_train: 0.1  # with a small prob, sampling correction points from GT mask instead of prediction errors
-    num_frames_to_correct_for_train: 2  # iteratively sample on random 1~2 frames (always include the first frame)
+    num_frames_to_correct_for_train: 1  # iteratively sample on random 1~2 frames (always include the first frame)
     num_frames_to_correct_for_eval: 1  # only iteratively sample on first frame
-    rand_frames_to_correct_for_train: True  # random #init-cond-frame ~ 2
-    add_all_frames_to_correct_as_cond: True  # when a frame receives a correction click, it becomes a conditioning frame (even if it's not initially a conditioning frame)
+    rand_frames_to_correct_for_train: False  # random #init-cond-frame ~ 2
+    add_all_frames_to_correct_as_cond: False  # when a frame receives a correction click, it becomes a conditioning frame (even if it's not initially a conditioning frame)
     # maximum 2 initial conditioning frames
-    num_init_cond_frames_for_train: 2
+    num_init_cond_frames_for_train: 1
     rand_init_cond_frames_for_train: True  # random 1~2
     num_correction_pt_per_frame: 7
     use_act_ckpt_iterative_pt_sampling: false
@@ -200,12 +200,16 @@ trainer:
     
   data:
     train:
-      _target_: dataset.mini_dataset.MiniDataset
-      phases_per_epoch: ${scratch.phases_per_epoch}
-      batch_sizes: ${scratch.train_batch_size}
+      _target_: custom_models.dataset.mini_dataset.MiniDataset
+      batch_size: ${scratch.train_batch_size}
       split_type: 'mini_train'
       len_video: 1
       input_image_size: ${scratch.resolution}
+      shuffle: True
+      collate_fn:
+        _target_: training.utils.data_utils.collate_fn
+        _partial_: true
+        dict_key: all
 
 
   # data:
@@ -327,7 +331,7 @@ trainer:
 
       state_dict:
         _target_: training.utils.checkpoint_utils.load_checkpoint_and_apply_kernels
-        checkpoint_path: ./checkpoints/sam2.1_hiera_base_plus.pt # PATH to SAM 2.1 checkpoint
+        checkpoint_path: /home/guests/tuna_gurbuz/prototype/models/sam2/checkpoints/sam2.1_hiera_base_plus.pt # PATH to SAM 2.1 checkpoint
         ckpt_state_dict_keys: ['model']
 
 launcher:

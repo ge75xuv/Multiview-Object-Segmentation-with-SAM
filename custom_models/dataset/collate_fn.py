@@ -15,15 +15,15 @@ from training.utils.data_utils import VideoDatapoint, BatchedVideoDatapoint, Bat
 
 
 def collate_fn(
-    batch_container: List[VideoDatapoint],
+    batch: List[VideoDatapoint],
 ) -> BatchedVideoDatapoint:
     """
     Args:
         batch_container: A list of VideoDatapoint instances AND segmentation_masks.
     """
-    batch = [bcc[0] for bcc in batch_container]
-    dict_key = [bcc[0].video_id for bcc in batch_container]
-    frames_segmentation_mask = [bcc[1] for bcc in batch_container]
+    frames_segmentation_mask = [bcc[1] for bcc in batch]
+    batch = [bcc[0] for bcc in batch]
+    dict_key = 'all'
     img_batch = []
     for video in batch:
         img_batch += [torch.stack([frame.data for frame in video.frames], dim=0)]

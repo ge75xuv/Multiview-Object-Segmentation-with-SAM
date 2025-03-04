@@ -39,17 +39,18 @@ model_size_dict = {
 
 def train():
     # Hyperparameters
-    epochs = 10
+    epochs = 1
     batch_size = 1
     lr = 5e-6
     shuffle = False
     len_objects = len(TRACK_TO_METAINFO.keys())
-    len_video = 1
+    len_video = 2
     model_size = 'small'
     input_image_size = 1024
 
     # Dataset
-    train_dataset = MiniDataset(split_type='small_train', len_video=len_video, input_image_size=input_image_size)
+    train_dataset = MiniDataset('mini_train', len_video, input_image_size, collate_fn=collate_fn, get_seg_mask=True)
+    loader = train_dataset.get_loader()
     valid_dataset = MiniDataset(split_type='val', len_video=len_video, input_image_size=input_image_size)
 
     # Show the data to test
@@ -140,12 +141,15 @@ def train():
                 iter_loss_val = loss_dict_val['core_loss']
                 writer.add_scalar("Loss/eval", iter_loss_val, epoch)
 
-        # Flush and close
-        writer.flush()
-        writer.close()
-        # Save the model weights
-        save_path = f'custom_models/finetune_checkpoints/model{start_time}.pt'
+        # Save Checkpoint
+        save_path = f'custom_models/finetune_checkpoints/model{start_time}_cp{epoch}.pt'
         torch.save(model.state_dict(), save_path)
+    # Flush and close
+    writer.flush()
+    writer.close()
+    # Save the model weights
+    save_path = f'custom_models/finetune_checkpoints/model{start_time}.pt'
+    torch.save(model.state_dict(), save_path)
 
 
 if __name__ == '__main__':
