@@ -36,13 +36,20 @@ class MiniDataset(Dataset):
         super().__init__()
         # Arguments
         self.len_video = len_video
-        self.to_tensor = ToTensor()
-        self.resize_image = Resize([768, 1024])
-        self.input_image_size = input_image_size
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.collate_fn=collate_fn
-        
+        self.input_image_size = input_image_size
+
+        # Initialize image resizer
+        original_image_size = (1536, 2048)  # (H,W)
+        scaling_factor = original_image_size[1] // input_image_size  # Depends on the long edge, short will be padded.
+        resize_shape = [original_image_size[0] // scaling_factor, input_image_size]
+        self.resize_image = Resize(resize_shape)
+
+        # Initialize image transforms
+        self.to_tensor = ToTensor()
+
         # Adjustment for the trainer
         self.get_seg_mask = kwargs.get('get_seg_mask', False)
 
@@ -192,8 +199,8 @@ class MiniDataset(Dataset):
                 # correct_class_probs = softmax_probs.gather(1, labels.unsqueeze(1)).squeeze(1)
                 label = obj_values['label']
                 mask1 = seg_np == label
-                mask1 = self.resize_image(torch.tensor(mask1[None,:,:], dtype=torch.bool))
-                mask1 = self._add_padding(mask1.type(torch.uint8), self.input_image_size).squeeze(0)
+                mask1 = self.resize_image(torch.tensor(mask1[None,:,:], dtype=torch.uint8) * 255)
+                mask1 = self._add_padding(mask1, self.input_image_size).squeeze(0)
 
                 # Occupy obj_list with the objects in the scene.
                 obj_list.append(Object(label, frame_idx, mask1))
@@ -207,7 +214,7 @@ class MiniDataset(Dataset):
 
     def _add_padding(self, input_image:torch.Tensor, out_shape:int):
         H = out_shape - input_image.shape[-2]
-        out_image = torch.zeros([input_image.shape[0], out_shape, out_shape])
+        out_image = torch.zeros([input_image.shape[0], out_shape, out_shape], dtype=input_image.dtype)
         out_image[:, H//2:-H//2, :] = input_image
         return out_image
 

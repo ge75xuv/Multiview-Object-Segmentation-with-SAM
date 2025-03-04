@@ -46,12 +46,11 @@ def train():
     len_objects = len(TRACK_TO_METAINFO.keys())
     len_video = 2
     model_size = 'small'
-    input_image_size = 1024
+    input_image_size = 512
 
     # Dataset
-    train_dataset = MiniDataset('mini_train', len_video, input_image_size, collate_fn=collate_fn, get_seg_mask=True)
-    loader = train_dataset.get_loader()
-    valid_dataset = MiniDataset(split_type='val', len_video=len_video, input_image_size=input_image_size)
+    train_dataset = MiniDataset('mini_train', len_video, input_image_size, collate_fn, batch_size, shuffle, get_seg_mask=True)
+    valid_dataset = MiniDataset('val', len_video, input_image_size, collate_fn, batch_size, shuffle, get_seg_mask=True)
 
     # Show the data to test
     debug = False
