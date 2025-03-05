@@ -1,20 +1,14 @@
-import os
-import sys
 import time
-import yaml
 
-import matplotlib.pyplot as plt
 import numpy as np
-from PIL import Image
 import torch
 from torch.amp import GradScaler
-from torch.nn import MSELoss
-from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.transforms import ToPILImage
 from tqdm import tqdm
 from training.optimizer import GradientClipper
+from training.dataset.transforms import ComposeAPI, NormalizeAPI
 
 from .custom_model_builder import build_sam2
 from .dataset.mini_dataset import MiniDataset
@@ -43,17 +37,20 @@ def train():
     batch_size = 1
     lr = 5e-6
     shuffle = False
-    len_objects = len(TRACK_TO_METAINFO.keys())
     len_video = 2
     model_size = 'small'
     input_image_size = 512
+    object_labels = [8, 9, 10]
+    len_objects = len(object_labels)
+    #  The list structure is just the way hydra parses the .yaml
+    transforms = [ComposeAPI([NormalizeAPI(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], v2=True)])]
 
     # Dataset
-    train_dataset = MiniDataset('mini_train', len_video, input_image_size, collate_fn, batch_size, shuffle, get_seg_mask=True)
-    valid_dataset = MiniDataset('val', len_video, input_image_size, collate_fn, batch_size, shuffle, get_seg_mask=True)
+    train_dataset = MiniDataset('mini_train', len_video, input_image_size, object_labels, transforms, collate_fn, batch_size, shuffle, get_seg_mask=True)
+    valid_dataset = MiniDataset('mini_train', len_video, input_image_size, object_labels, transforms, collate_fn, batch_size, shuffle, get_seg_mask=True)
 
     # Show the data to test
-    debug = False
+    debug = True
     if debug:
         toPILimage = ToPILImage()
         idx = np.random.randint(0, len(train_dataset))
@@ -86,7 +83,7 @@ def train():
     scaler = GradScaler(device=device, enabled=True, )
     gradient_clipper = GradientClipper(max_norm=0.1, norm_type=2)
     where = 0
-    
+
     # Initialize the writer
     start_time = time.strftime('%m_%d_%H_%M', time.gmtime())
     writer = SummaryWriter(log_dir=f'tb_logs/{start_time}')

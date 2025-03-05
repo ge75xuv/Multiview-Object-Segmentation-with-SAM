@@ -84,7 +84,8 @@ def build_sam2_predict(
     OmegaConf.resolve(cfg)
     print(f'OmegaConf resolved successfully')
     # Instantiate model, loss, load weights, freeze backbone
-    model = instantiate(cfg.trainer.model, _recursive_=True)
+    training_key = list(cfg.keys())[0]
+    model = instantiate(cfg[training_key].trainer.model, _recursive_=True)
     _load_checkpoint(model, ckpt_path, False)
     # send model to device
     model = model.to(device)

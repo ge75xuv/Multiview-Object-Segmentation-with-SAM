@@ -1,5 +1,5 @@
 from hydra import initialize
-initialize(version_base=None, config_path="../sam2_logs/sam2.1_hiera_b+_promptless.yaml/", job_name="predict_run")
+initialize(version_base=None, config_path="../sam2_logs/", job_name="predict_run")
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -17,8 +17,8 @@ from .custom_model_builder import build_sam2_predict
 
 model_size_dict = {
     'base': {
-        'config': 'config.yaml',
-        'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/sam2.1_hiera_b+_promptless.yaml/checkpoints/checkpoint.pt',
+        'config': '03_04_21_32/config_resolved.yaml',
+        'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/03_04_21_32/checkpoints/checkpoint.pt',
         },
 }
 seed = 6
@@ -33,7 +33,8 @@ def predict():
     config = model_size_dict[model_size]['config']
     ck = model_size_dict[model_size]['ck']
     # submodel = build_sam2(config, ck, 'cpu')
-    submodel = build_sam2_predict(config, ck)
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    submodel = build_sam2_predict(config, ck, device=device)
     im_pred = SAM2ImagePredictor(submodel)
     im_pred._bb_feat_sizes = [
             (128, 128),
@@ -41,18 +42,19 @@ def predict():
             (32, 32),
         ]
 
-    #TODO set the input_image_size and len_objects from the config yaml, especially the latter since we are gonna play around with it
-    #TODO the base config we need, can also have varying configuration parameters like resolution, it is really shitty 
+    #TODO DONE set the input_image_size and len_objects from the config yaml, especially the latter since we are gonna play around with it
+    #TODO DONE the base config we need, can also have varying configuration parameters like resolution, it is really shitty 
 
     # Dataset
     len_video = 1
     input_image_size = 512
     batch_size = 1
     shuffle = False
-    test_dataset = MiniDataset('val', len_video, input_image_size, collate_fn, batch_size, shuffle, get_seg_mask=True)
+    object_labels = [8, 9, 10]
+    test_dataset = MiniDataset('val', len_video, input_image_size, object_labels, collate_fn, batch_size, shuffle, get_seg_mask=True)
 
     # Image
-    len_objects = len(TRACK_TO_METAINFO.keys())
+    len_objects = len(object_labels)
     toPILimage = ToPILImage()
     exist = False
     while True:
@@ -87,7 +89,7 @@ def predict():
     masks, scores, logits = im_pred.predict(
     point_coords=points,
     point_labels=labels,
-    multimask_output=True,
+    multimask_output=False,
 )
     sorted_ind = np.argsort(scores, axis=1)[:,-1]
     obj_ind = np.arange(3)
@@ -98,4 +100,5 @@ def predict():
         toPILimage((mask*255).astype(np.uint8)).save(f'temp/est_mask{idx}.png')
 
 if __name__ == '__main__':
+    print('Prediction Started!')
     predict()

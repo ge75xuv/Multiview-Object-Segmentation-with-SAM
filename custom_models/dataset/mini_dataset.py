@@ -1,12 +1,12 @@
 import json
 import os
 import re
+from typing import List
 
 import numpy as np
 from PIL import Image
 import torch
 from torch.utils.data import Dataset, DataLoader
-import torchvision
 from torchvision.transforms import ToTensor, Resize
 from training.utils.data_utils import Object, Frame, VideoDatapoint
 from tqdm import tqdm
@@ -19,6 +19,8 @@ class MiniDataset(Dataset):
                  split_type:str,
                  len_video:int,
                  input_image_size:int,
+                 object_labels: List[int],
+                 transforms,
                  collate_fn,
                  batch_size:int=1,
                  shuffle:bool=1,
@@ -40,6 +42,10 @@ class MiniDataset(Dataset):
         self.shuffle = shuffle
         self.collate_fn=collate_fn
         self.input_image_size = input_image_size
+        self.transforms_ = transforms
+        self.object_labels = object_labels
+        true_labels = [obj['label'] for obj in iter(TRACK_TO_METAINFO.values())]
+        assert all([obj in true_labels for obj in object_labels]), 'Unidentified key in the obj labels'
 
         # Initialize image resizer
         original_image_size = (1536, 2048)  # (H,W)
@@ -166,16 +172,22 @@ class MiniDataset(Dataset):
         return len(self.segmentation_masks)
     
     def __getitem__(self, index):
+        # Get file paths
         video_frames = self.images[index]
         video_frames_segmentation_mask = self.segmentation_masks[index]
-        frame_obj_list, frames_segmentation_mask = self._convert_to_one_hot_mask(video_frames, video_frames_segmentation_mask)
+        # Open the images and process (resizing to input size, padding, etc.)
+        frame_obj_list, frames_segmentation_mask = self._open_and_process(video_frames, video_frames_segmentation_mask)
+        # Create the VideoDatapoint
         size_x_y = frame_obj_list[0].data.shape[-2:]
         video_datapoint = VideoDatapoint(frame_obj_list, index, size_x_y)
+        # Apply transforms
+        for transform in self.transforms_:
+            video_datapoint = transform(video_datapoint)
         if self.get_seg_mask:
             return video_datapoint, frames_segmentation_mask
         return video_datapoint
 
-    def _convert_to_one_hot_mask(self, video_frames, video_frames_segmentation_mask):        
+    def _open_and_process(self, video_frames, video_frames_segmentation_mask):
         frame_obj_list = []
         frames_segmentation_mask = []
 
@@ -185,19 +197,17 @@ class MiniDataset(Dataset):
             im_frame = Image.open(frame).convert("RGB")
             segmentation_mask = Image.open(video_frames_segmentation_mask[frame_idx]).convert("RGB")
             seg_np = np.array(segmentation_mask)[:,:,0]  # We only need one channel, transpose since numpy reverts the positions
-            
+
             # Initialize one-hot-mask and obj list
             obj_list = []
-            
+
             # Iterate over the object keys and values
-            i = 0
-            for obj_keys, obj_values in TRACK_TO_METAINFO.items():
-                if obj_keys == '__background__':
+            for label in self.object_labels:
+                if label == 0:
                     continue
                 # Get label, find regions with the label and set the mask
                 # This would absolutely work here
                 # correct_class_probs = softmax_probs.gather(1, labels.unsqueeze(1)).squeeze(1)
-                label = obj_values['label']
                 mask1 = seg_np == label
                 mask1 = self.resize_image(torch.tensor(mask1[None,:,:], dtype=torch.uint8) * 255)
                 mask1 = self._add_padding(mask1, self.input_image_size).squeeze(0)
