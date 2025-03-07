@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from hydra import initialize
 initialize(version_base=None, config_path="../sam2_logs/", job_name="predict_run")
 
@@ -7,7 +9,8 @@ from omegaconf import OmegaConf
 # from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 import torch
-from torchvision.transforms import ToPILImage, ToTensor
+from torchvision.transforms import ToPILImage, ToTensor, Normalize
+from training.dataset.transforms import ComposeAPI, NormalizeAPI
 
 from .helpers.configurations import TRACK_TO_METAINFO
 from .dataset.collate_fn import collate_fn
@@ -17,11 +20,11 @@ from .custom_model_builder import build_sam2_predict
 
 model_size_dict = {
     'base': {
-        'config': '03_04_21_32/config_resolved.yaml',
-        'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/03_04_21_32/checkpoints/checkpoint.pt',
+        'config': '03_07_10_31/config_resolved.yaml',
+        'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/03_07_10_31/checkpoints/checkpoint.pt',
         },
 }
-seed = 6
+seed = 231
 torch.manual_seed(seed)
 np.random.seed(seed)
 
@@ -34,7 +37,7 @@ def predict():
     ck = model_size_dict[model_size]['ck']
     # submodel = build_sam2(config, ck, 'cpu')
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    submodel = build_sam2_predict(config, ck, device=device)
+    submodel, object_labels = build_sam2_predict(config, ck, device=device)
     im_pred = SAM2ImagePredictor(submodel)
     im_pred._bb_feat_sizes = [
             (128, 128),
@@ -50,52 +53,64 @@ def predict():
     input_image_size = 512
     batch_size = 1
     shuffle = False
-    object_labels = [8, 9, 10]
-    test_dataset = MiniDataset('val', len_video, input_image_size, object_labels, collate_fn, batch_size, shuffle, get_seg_mask=True)
+    mean = [0.485, 0.456, 0.406]
+    std = [0.229, 0.224, 0.225]
+    transforms = [ComposeAPI([NormalizeAPI(mean=mean, std=std, v2=True)])]
+    revert_mean=[-.485/.229, -.456/.224, -.406/.225]
+    revert_std=[1/.229, 1/.224, 1/.225]
+    revert_transform = Normalize(mean=revert_mean, std=revert_std)
+    test_dataset = MiniDataset('val', len_video, input_image_size, object_labels, transforms, collate_fn, batch_size, shuffle, get_seg_mask=True)
 
     # Image
     len_objects = len(object_labels)
     toPILimage = ToPILImage()
     exist = False
+    if_break = False
     while True:
-        if exist:
+        if if_break:
             break
         idx = np.random.randint(0, len(test_dataset))
-        idx = 25424
+        # idx = 25424
         print(f'Index: {idx}')
         frame_obj_list, frames_segmentation_mask = test_dataset[idx]
         for i in range(len_video):
-            if exist:
-                break
             image = frame_obj_list.frames[i].data
+            # Save the unnormalized image
+            image_to_print = toPILimage(revert_transform(image))
+            image_to_print.save(f'temp/image{i}.png')
             segmentation_mask = frames_segmentation_mask[i]
             image = toPILimage(image)
-            image.save(f'temp/image{i}.png')
             segmentation_mask.save(f'temp/segmentation_mask{i}.png')
             for j in range(len_objects):
                 exist = torch.any(frame_obj_list.frames[i].objects[j].segment == True)
-                print(f'Exist Flag: {exist}')
-                if exist:
-                    break
                 toPILimage(frame_obj_list.frames[i].objects[j].segment/255).save(f'temp/one_hot{i}{j}.png')
+                if_break = True if exist else if_break
+
     im_pred.set_image(image)
+    plt.imshow(image)
+    plt.show()
 
     # Point Copy-Paste from the sam2_tune
     O = len_objects
-    points = torch.tensor([[i,i] for i in range(O)]).unsqueeze(1)
+    points = torch.tensor([[i,i] for i in object_labels]).unsqueeze(1)
     labels = torch.tensor([[1]]).tile((O,1))
 
     # Predict
+    multimask_output = True
     masks, scores, logits = im_pred.predict(
     point_coords=points,
     point_labels=labels,
-    multimask_output=False,
+    multimask_output=multimask_output,
 )
-    sorted_ind = np.argsort(scores, axis=1)[:,-1]
-    obj_ind = np.arange(3)
-    best_masks = masks[obj_ind,sorted_ind]
-    best_scores = scores[obj_ind,sorted_ind]
-    best_logits = logits[obj_ind,sorted_ind]
+    best_masks = deepcopy(masks)
+    if multimask_output:
+        masks = masks[None,:,:,:] if len(masks.shape) == 3 else masks
+        scores = scores[None,:] if len(scores.shape) == 1 else scores
+        sorted_ind = np.argsort(scores, axis=1)[:,-1]
+        obj_ind = np.arange(len_objects)
+        best_masks = masks[obj_ind,sorted_ind]
+        best_scores = scores[obj_ind,sorted_ind]
+        # best_logits = logits[obj_ind,sorted_ind]
     for idx, mask in enumerate(best_masks):
         toPILimage((mask*255).astype(np.uint8)).save(f'temp/est_mask{idx}.png')
 

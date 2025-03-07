@@ -4,15 +4,14 @@ scratch:
   resolution: 512
   train_batch_size: 1
   num_train_workers: 10
-  # num_frames: 8
   # max_num_objects: 3
   base_lr: 5.0e-6
   vision_lr: 3.0e-06
-  obj_labels: [1, 5, 8, 9, 10, 24]
-  len_objects: 
+  obj_labels: [5]  # [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 24]
+  num_frames: 1
   # phases_per_epoch: 1
   # num_epochs: 40
-  max_epochs: 2
+  max_epochs: 10
 
 # dataset:
 #   # PATHS to Dataset
@@ -67,6 +66,7 @@ trainer:
 
   model:
     _target_: custom_models.models.custom_sam2_tune.SAM2Tune
+    freeze_image_encoder: True
     image_encoder:
       _target_: sam2.modeling.backbones.image_encoder.ImageEncoder
       scalp: 1
@@ -158,7 +158,7 @@ trainer:
     # use high-resolution feature map in the SAM mask decoder
     use_high_res_features_in_sam: true
     # output 3 masks on the first click on initial conditioning frames
-    multimask_output_in_sam: false
+    multimask_output_in_sam: true
     # SAM heads
     iou_prediction_use_sigmoid: True
     # cross-attend to object pointers from other frames (based on SAM output tokens) in the encoder
@@ -207,7 +207,7 @@ trainer:
       _target_: custom_models.dataset.mini_dataset.MiniDataset
       batch_size: ${scratch.train_batch_size}
       split_type: 'small_train'
-      len_video: 1
+      len_video: ${scratch.num_frames}
       input_image_size: ${scratch.resolution}
       object_labels: ${scratch.obj_labels}
       transforms: ${vos.train_transforms}

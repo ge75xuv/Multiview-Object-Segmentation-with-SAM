@@ -43,7 +43,7 @@ class MiniDataset(Dataset):
         self.collate_fn=collate_fn
         self.input_image_size = input_image_size
         self.transforms_ = transforms
-        self.object_labels = object_labels
+        self.object_labels = list(set(object_labels))  # Get rid of the repeating values if they exist
         true_labels = [obj['label'] for obj in iter(TRACK_TO_METAINFO.values())]
         assert all([obj in true_labels for obj in object_labels]), 'Unidentified key in the obj labels'
 
@@ -203,8 +203,6 @@ class MiniDataset(Dataset):
 
             # Iterate over the object keys and values
             for label in self.object_labels:
-                if label == 0:
-                    continue
                 # Get label, find regions with the label and set the mask
                 # This would absolutely work here
                 # correct_class_probs = softmax_probs.gather(1, labels.unsqueeze(1)).squeeze(1)

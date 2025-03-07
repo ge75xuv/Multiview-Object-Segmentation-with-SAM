@@ -50,7 +50,7 @@ def train():
     valid_dataset = MiniDataset('mini_train', len_video, input_image_size, object_labels, transforms, collate_fn, batch_size, shuffle, get_seg_mask=True)
 
     # Show the data to test
-    debug = True
+    debug = False
     if debug:
         toPILimage = ToPILImage()
         idx = np.random.randint(0, len(train_dataset))
@@ -70,7 +70,7 @@ def train():
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_fn)
     valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
 
-    device = "cuda:1" if torch.cuda.is_available() else "cpu"
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
     autocast_dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float16
     iters_per_epoch = len(train_loader)
     print(f'Device: {device}\n')

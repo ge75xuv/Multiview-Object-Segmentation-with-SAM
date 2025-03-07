@@ -90,7 +90,7 @@ def build_sam2_predict(
     # send model to device
     model = model.to(device)
     model.eval()
-    return model
+    return model, cfg[training_key]['scratch']['obj_labels']
 
 def _load_checkpoint(model, ckpt_path, _load_partial:bool=False):
     if ckpt_path is not None:

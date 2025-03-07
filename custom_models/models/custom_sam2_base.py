@@ -179,7 +179,7 @@ class customSAM2Base(torch.nn.Module):
             self.no_obj_embed_spatial = torch.nn.Parameter(torch.zeros(1, self.mem_dim))
             trunc_normal_(self.no_obj_embed_spatial, std=0.02)
 
-        self.num_multimask_outputs = num_multimask_outputs
+        self.num_multimask_outputs = num_multimask_outputs if multimask_output_in_sam else 1
         self._build_sam_heads()
         self.max_cond_frames_in_attn = max_cond_frames_in_attn
 
@@ -539,6 +539,7 @@ class customSAM2Base(torch.nn.Module):
             # We also allow taking the memory frame non-consecutively (with stride>1), in which case
             # we take (self.num_maskmem - 2) frames among every stride-th frames plus the last frame.
             stride = 1 if self.training else self.memory_temporal_stride_for_eval
+            # Just create a list of tuples (frame_idx, output_dict). If it is a cond frame or None output
             for t_pos in range(1, self.num_maskmem):
                 t_rel = self.num_maskmem - t_pos  # how many frames before current frame
                 if t_rel == 1:
