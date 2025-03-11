@@ -20,11 +20,11 @@ from .custom_model_builder import build_sam2_predict
 
 model_size_dict = {
     'base': {
-        'config': '03_07_10_31/config_resolved.yaml',
-        'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/03_07_10_31/checkpoints/checkpoint.pt',
+        'config': '03_08_23_34/config_resolved.yaml',
+        'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/03_08_23_34/checkpoints/checkpoint.pt',
         },
 }
-seed = 231
+seed = 400
 torch.manual_seed(seed)
 np.random.seed(seed)
 

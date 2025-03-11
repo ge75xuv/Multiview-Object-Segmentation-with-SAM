@@ -30,6 +30,9 @@ model_size_dict = {
         },
 }
 
+seed = 123
+torch.manual_seed(seed)
+np.random.seed(seed)
 
 def train():
     # Hyperparameters
@@ -46,14 +49,15 @@ def train():
     transforms = [ComposeAPI([NormalizeAPI(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], v2=True)])]
 
     # Dataset
-    train_dataset = MiniDataset('mini_train', len_video, input_image_size, object_labels, transforms, collate_fn, batch_size, shuffle, get_seg_mask=True)
+    train_dataset = MiniDataset('train', len_video, input_image_size, object_labels, transforms, collate_fn, batch_size, shuffle, get_seg_mask=True)
     valid_dataset = MiniDataset('mini_train', len_video, input_image_size, object_labels, transforms, collate_fn, batch_size, shuffle, get_seg_mask=True)
 
     # Show the data to test
-    debug = False
+    debug = True
     if debug:
         toPILimage = ToPILImage()
         idx = np.random.randint(0, len(train_dataset))
+        idx = 29930
         frame_obj_list, frames_segmentation_mask = train_dataset[idx]
         for i in range(len_video):
             image = frame_obj_list.frames[i].data

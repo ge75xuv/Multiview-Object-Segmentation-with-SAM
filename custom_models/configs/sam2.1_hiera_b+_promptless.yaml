@@ -3,15 +3,15 @@
 scratch:
   resolution: 512
   train_batch_size: 1
-  num_train_workers: 10
+  num_train_workers: 2
   # max_num_objects: 3
   base_lr: 5.0e-6
   vision_lr: 3.0e-06
-  obj_labels: [5]  # [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 24]
+  obj_labels: [10]  # [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 24]
   num_frames: 1
   # phases_per_epoch: 1
   # num_epochs: 40
-  max_epochs: 10
+  max_epochs: 20
 
 # dataset:
 #   # PATHS to Dataset
@@ -58,7 +58,7 @@ vos:
 
 trainer:
   _target_: custom_models.trainer.Trainer
-  mode: train_only  # [train]
+  mode: train  # [train]
   # max_epochs: ${times:${scratch.num_epochs},${scratch.phases_per_epoch}}
   max_epochs: ${scratch.max_epochs}
   accelerator: cuda
@@ -206,7 +206,7 @@ trainer:
     train:
       _target_: custom_models.dataset.mini_dataset.MiniDataset
       batch_size: ${scratch.train_batch_size}
-      split_type: 'small_train'
+      split_type: 'train'
       len_video: ${scratch.num_frames}
       input_image_size: ${scratch.resolution}
       object_labels: ${scratch.obj_labels}
@@ -216,7 +216,19 @@ trainer:
         _target_: training.utils.data_utils.collate_fn
         _partial_: true
         dict_key: all
-
+    # val:
+    #   _target_: custom_models.dataset.mini_dataset.MiniDataset
+    #   batch_size: ${scratch.train_batch_size}
+    #   split_type: 'val'
+    #   len_video: ${scratch.num_frames}
+    #   input_image_size: ${scratch.resolution}
+    #   object_labels: ${scratch.obj_labels}
+    #   transforms: ${vos.train_transforms}
+    #   shuffle: False
+    #   collate_fn:
+    #     _target_: training.utils.data_utils.collate_fn
+    #     _partial_: true
+    #     dict_key: all
 
   # data:
   #   train:
@@ -326,8 +338,10 @@ trainer:
 
   # initialize from a SAM 2 checkpoint
   checkpoint:
+    ## Resume from must be switched to None afterwards!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    resume_from: sam2_logs/03_08_23_34/checkpoints/checkpoint.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
-    save_freq: 0 # 0 only last checkpoint is saved.
+    save_freq: 2 # 0 only last checkpoint is saved.
     model_weight_initializer:
       _partial_: True
       _target_: training.utils.checkpoint_utils.load_state_dict_into_model
