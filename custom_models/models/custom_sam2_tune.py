@@ -164,6 +164,7 @@ class SAM2Tune(customSAM2Base):
         backbone_out["num_frames"] = num_frames
 
         # Randomly decide whether to use point inputs or mask inputs
+        # HEADS UP
         if self.training:
             prob_to_use_pt_input = 1.0
             prob_to_use_box_input = 0.0
@@ -226,6 +227,7 @@ class SAM2Tune(customSAM2Base):
                 backbone_out["mask_inputs_per_frame"][t] = gt_masks_per_frame[t]
             else:
                 # During training # P(box) = prob_to_use_pt_input * prob_to_use_box_input
+                # HEADS UP
                 use_box_input = self.rng.random() < prob_to_use_box_input
                 if use_box_input:
                     # points, labels = sample_box_points(
