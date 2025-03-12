@@ -11,7 +11,7 @@ scratch:
   num_frames: 1
   # phases_per_epoch: 1
   # num_epochs: 40
-  max_epochs: 20
+  max_epochs: 40
 
 # dataset:
 #   # PATHS to Dataset
@@ -206,7 +206,7 @@ trainer:
     train:
       _target_: custom_models.dataset.mini_dataset.MiniDataset
       batch_size: ${scratch.train_batch_size}
-      split_type: 'train'
+      split_type: 'over_train'
       len_video: ${scratch.num_frames}
       input_image_size: ${scratch.resolution}
       object_labels: ${scratch.obj_labels}
@@ -339,7 +339,7 @@ trainer:
   # initialize from a SAM 2 checkpoint
   checkpoint:
     ## Resume from must be switched to None afterwards!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    resume_from: sam2_logs/03_08_23_34/checkpoints/checkpoint.pt
+    # resume_from: sam2_logs/03_08_23_34/checkpoints/checkpoint.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
     save_freq: 2 # 0 only last checkpoint is saved.
     model_weight_initializer:

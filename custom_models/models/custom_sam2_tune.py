@@ -165,17 +165,17 @@ class SAM2Tune(customSAM2Base):
 
         # Randomly decide whether to use point inputs or mask inputs
         if self.training:
-            prob_to_use_pt_input = self.prob_to_use_pt_input_for_train
-            prob_to_use_box_input = self.prob_to_use_box_input_for_train
+            prob_to_use_pt_input = 1.0
+            prob_to_use_box_input = 0.0
             num_frames_to_correct = self.num_frames_to_correct_for_train
-            rand_frames_to_correct = self.rand_frames_to_correct_for_train
+            rand_frames_to_correct = False
             num_init_cond_frames = self.num_init_cond_frames_for_train
             rand_init_cond_frames = self.rand_init_cond_frames_for_train
         else:
-            prob_to_use_pt_input = self.prob_to_use_pt_input_for_eval
-            prob_to_use_box_input = self.prob_to_use_box_input_for_eval
+            prob_to_use_pt_input = 1.0
+            prob_to_use_box_input = 0.0
             num_frames_to_correct = self.num_frames_to_correct_for_eval
-            rand_frames_to_correct = self.rand_frames_to_correct_for_eval
+            rand_frames_to_correct = False
             num_init_cond_frames = self.num_init_cond_frames_for_eval
             rand_init_cond_frames = self.rand_init_cond_frames_for_eval
         if num_frames == 1:
@@ -228,31 +228,40 @@ class SAM2Tune(customSAM2Base):
                 # During training # P(box) = prob_to_use_pt_input * prob_to_use_box_input
                 use_box_input = self.rng.random() < prob_to_use_box_input
                 if use_box_input:
-                    ## Generate Pseudo bounding boxes over the whole image
                     # points, labels = sample_box_points(
                     #     gt_masks_per_frame[t],
                     # )
-                    O = gt_masks_per_frame[0].shape[0]
-                    W, H = gt_masks_per_frame[0].shape[-2:]
-                    points = torch.tensor([[0,0], [W,H]]).unsqueeze(0).tile((O,1,1))
-                    labels = torch.tensor([[2,3]]).tile((O,1))
+                    ## Generate Pseudo bounding boxes over the whole image
+                    # O = gt_masks_per_frame[0].shape[0]
+                    # W, H = gt_masks_per_frame[0].shape[-2:]
+                    # points = torch.tensor([[0,0], [W,H]]).unsqueeze(0).tile((O,1,1))
+                    # labels = torch.tensor([[2,3]]).tile((O,1))
+                    ## Do not give any prompts set point inputs also to None
+                    points = None
+                    labels = None
                 else:
                     # (here we only sample **one initial point** on initial conditioning frames from the
                     # ground-truth mask; we may sample more correction points on the fly)
-                    points, labels = get_next_point(
-                        gt_masks=gt_masks_per_frame[t],
-                        pred_masks=None,
-                        method=(
-                            "uniform" if self.training else self.pt_sampling_for_eval
-                        ),
-                    )
+                    # points, labels = get_next_point(
+                    #     gt_masks=gt_masks_per_frame[t],
+                    #     pred_masks=None,
+                    #     method=(
+                    #         "uniform" if self.training else self.pt_sampling_for_eval
+                    #     ),
+                    # )
+                    class_labels = input.metadata.unique_objects_identifier[t,:,1]
+                    O = gt_masks_per_frame[0].shape[0]
+                    device = gt_masks_per_frame[0].device
+                    points = torch.tensor([[i,i] for i in class_labels], device=device).unsqueeze(1)
+                    labels = torch.ones([O,1], device=device)
 
                 point_inputs = {"point_coords": points, "point_labels": labels}
                 backbone_out["point_inputs_per_frame"][t] = point_inputs
 
         # Sample frames where we will add correction clicks on the fly
         # based on the error between prediction and ground-truth masks
-        if not use_pt_input:
+        # HEADS UP: Manipulated here because we dont wanna correct anything.
+        if not use_pt_input or True:
             # no correction points will be sampled when using mask inputs
             frames_to_add_correction_pt = []
         elif num_frames_to_correct == num_init_cond_frames:
@@ -297,6 +306,9 @@ class SAM2Tune(customSAM2Base):
             "cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
             "non_cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
         }
+        # In the following, vision feats which are generated for each frame, 
+        # are expanded from num_frames to num_objects for each frame, 
+        # then we iterate over the frames
         for stage_id in processing_order:
             # Get the image features for the current frames
             # img_ids = input.find_inputs[stage_id].img_ids

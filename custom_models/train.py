@@ -53,7 +53,7 @@ def train():
     valid_dataset = MiniDataset('mini_train', len_video, input_image_size, object_labels, transforms, collate_fn, batch_size, shuffle, get_seg_mask=True)
 
     # Show the data to test
-    debug = True
+    debug = False
     if debug:
         toPILimage = ToPILImage()
         idx = np.random.randint(0, len(train_dataset))
@@ -67,8 +67,6 @@ def train():
             segmentation_mask.save(f'temp/segmentation_mask{i}.png')
             for j in range(len_objects):
                 toPILimage(frame_obj_list.frames[i].objects[j].segment).save(f'temp/one_hot{i}{j}.png')
-
-    # TODO Data Augmentation in the Dataset
 
     # Dataloader
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_fn)
