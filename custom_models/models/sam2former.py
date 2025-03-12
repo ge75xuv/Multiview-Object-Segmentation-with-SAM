@@ -15,6 +15,8 @@ from torch.nn.init import trunc_normal_
 # from sam2.modeling.sam.transformer import TwoWayTransformer
 from sam2.modeling.sam2_utils import get_1d_sine_pe, MLP, select_closest_cond_frames
 
+from .mask2former_transformer_decoder import MultiScaleMaskedTransformerDecoder
+
 # a large negative value as a placeholder score for missing objects
 NO_OBJ_SCORE = -1024.0
 
@@ -220,24 +222,32 @@ class SAM2Base(torch.nn.Module):
         #     input_image_size=(self.image_size, self.image_size),
         #     mask_in_chans=16,
         # )
-        self.sam_mask_decoder = MaskDecoder(
-            num_multimask_outputs=3,
-            transformer=TwoWayTransformer(
-                depth=2,
-                embedding_dim=self.sam_prompt_embed_dim,
-                mlp_dim=2048,
-                num_heads=8,
-            ),
-            transformer_dim=self.sam_prompt_embed_dim,
-            iou_head_depth=3,
-            iou_head_hidden_dim=256,
-            use_high_res_features=self.use_high_res_features_in_sam,
-            iou_prediction_use_sigmoid=self.iou_prediction_use_sigmoid,
-            pred_obj_scores=self.pred_obj_scores,
-            pred_obj_scores_mlp=self.pred_obj_scores_mlp,
-            use_multimask_token_for_obj_ptr=self.use_multimask_token_for_obj_ptr,
-            **(self.sam_mask_decoder_extra_args or {}),
-        )
+        self.sam_mask_decoder = MultiScaleMaskedTransformerDecoder(self.sam_prompt_embed_dim,
+                                                                   num_classes=1,
+                                                                   num_queries=1,
+                                                                   nheads=1,
+                                                                   dim_feedforward=1,
+                                                                   dec_layers=1,
+                                                                   pre_norm=True,
+                                                                   )
+        # self.sam_mask_decoder = MaskDecoder(
+        #     num_multimask_outputs=3,
+        #     transformer=TwoWayTransformer(
+        #         depth=2,
+        #         embedding_dim=self.sam_prompt_embed_dim,
+        #         mlp_dim=2048,
+        #         num_heads=8,
+        #     ),
+        #     transformer_dim=self.sam_prompt_embed_dim,
+        #     iou_head_depth=3,
+        #     iou_head_hidden_dim=256,
+        #     use_high_res_features=self.use_high_res_features_in_sam,
+        #     iou_prediction_use_sigmoid=self.iou_prediction_use_sigmoid,
+        #     pred_obj_scores=self.pred_obj_scores,
+        #     pred_obj_scores_mlp=self.pred_obj_scores_mlp,
+        #     use_multimask_token_for_obj_ptr=self.use_multimask_token_for_obj_ptr,
+        #     **(self.sam_mask_decoder_extra_args or {}),
+        # )
         if self.use_obj_ptrs_in_encoder:
             # a linear projection on SAM output tokens to turn them into object pointers
             self.obj_ptr_proj = torch.nn.Linear(self.hidden_dim, self.hidden_dim)
@@ -307,41 +317,6 @@ class SAM2Base(torch.nn.Module):
         assert backbone_features.size(2) == self.sam_image_embedding_size
         assert backbone_features.size(3) == self.sam_image_embedding_size
 
-        # a) Handle point prompts
-        if point_inputs is not None:
-            sam_point_coords = point_inputs["point_coords"]
-            sam_point_labels = point_inputs["point_labels"]
-            assert sam_point_coords.size(0) == B and sam_point_labels.size(0) == B
-        else:
-            # If no points are provide, pad with an empty point (with label -1)
-            sam_point_coords = torch.zeros(B, 1, 2, device=device)
-            sam_point_labels = -torch.ones(B, 1, dtype=torch.int32, device=device)
-
-        # b) Handle mask prompts
-        if mask_inputs is not None:
-            # If mask_inputs is provided, downsize it into low-res mask input if needed
-            # and feed it as a dense mask prompt into the SAM mask encoder
-            assert len(mask_inputs.shape) == 4 and mask_inputs.shape[:2] == (B, 1)
-            if mask_inputs.shape[-2:] != self.sam_prompt_encoder.mask_input_size:
-                sam_mask_prompt = F.interpolate(
-                    mask_inputs.float(),
-                    size=self.sam_prompt_encoder.mask_input_size,
-                    align_corners=False,
-                    mode="bilinear",
-                    antialias=True,  # use antialias for downsampling
-                )
-            else:
-                sam_mask_prompt = mask_inputs
-        else:
-            # Otherwise, simply feed None (and SAM's prompt encoder will add
-            # a learned `no_mask_embed` to indicate no mask input in this case).
-            sam_mask_prompt = None
-
-        sparse_embeddings, dense_embeddings = self.sam_prompt_encoder(
-            points=(sam_point_coords, sam_point_labels),
-            boxes=None,
-            masks=sam_mask_prompt,
-        )
         (
             low_res_multimasks,
             ious,
@@ -349,13 +324,13 @@ class SAM2Base(torch.nn.Module):
             object_score_logits,
         ) = self.sam_mask_decoder(
             image_embeddings=backbone_features,
-            image_pe=self.sam_prompt_encoder.get_dense_pe(),
-            sparse_prompt_embeddings=sparse_embeddings,
-            dense_prompt_embeddings=dense_embeddings,
+            ##TODO The image has the positional encodings of the mask prompt, 
+            # check how they do in the mask2former
             multimask_output=multimask_output,
             repeat_image=False,  # the image is already batched
             high_res_features=high_res_features,
         )
+        self.sam_mask_decoder()
         if self.pred_obj_scores:
             is_obj_appearing = object_score_logits > 0
 
