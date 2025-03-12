@@ -83,8 +83,9 @@ MMOR_TAKE_NAME_TO_FOLDER = {'012_1_PKA': '012_PKA', '012_2_PKA': '012_PKA', '015
                             '027_PKA': '023-032_PKA', '028_PKA': '023-032_PKA', '029_PKA': '023-032_PKA', '030_PKA': '023-032_PKA', '031_PKA': '023-032_PKA', '032_PKA': '023-032_PKA'}
 
 MMOR_SPLIT_TO_TAKES = {
-    "train": ['001_PKA', '003_TKA', '005_TKA', '006_PKA', '008_PKA', '010_PKA', '012_1_PKA', '012_2_PKA', '035_PKA', '037_TKA'],
+    "train": ['001_PKA', '003_TKA', '005_TKA', '006_PKA', '008_PKA', '010_PKA', '011_TKA', '035_PKA', '037_TKA'],  # deleted , '012_PKA'
     "small_train": ['001_PKA', '003_TKA', '035_PKA', '037_TKA', '005_TKA'],
+    "over_train": ['001_PKA', '003_TKA',],
     "mini_train": ['013_PKA'],  # just for debugging
     "val": ['002_PKA', '007_TKA', '009_TKA'],
     "test": ['004_PKA', '011_TKA', '036_PKA', '038_TKA'], # 004_PKA is flickering, if that is a big issue maybe change it to val. Maybe a validation take should be here also?

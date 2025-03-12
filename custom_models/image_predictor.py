@@ -20,11 +20,11 @@ from .custom_model_builder import build_sam2_predict
 
 model_size_dict = {
     'base': {
-        'config': '03_08_23_34/config_resolved.yaml',
-        'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/03_08_23_34/checkpoints/checkpoint.pt',
+        'config': '03_11_13_02_over_train_40_epoch/config_resolved.yaml',
+        'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/03_11_13_02_over_train_40_epoch/checkpoints/checkpoint_16.pt',
         },
 }
-seed = 400
+seed = 600
 torch.manual_seed(seed)
 np.random.seed(seed)
 
@@ -59,13 +59,24 @@ def predict():
     revert_mean=[-.485/.229, -.456/.224, -.406/.225]
     revert_std=[1/.229, 1/.224, 1/.225]
     revert_transform = Normalize(mean=revert_mean, std=revert_std)
-    test_dataset = MiniDataset('val', len_video, input_image_size, object_labels, transforms, collate_fn, batch_size, shuffle, get_seg_mask=True)
+    test_dataset = MiniDataset('over_train', len_video, input_image_size, object_labels, transforms, collate_fn, batch_size, shuffle, get_seg_mask=True)
 
     # Image
     len_objects = len(object_labels)
     toPILimage = ToPILImage()
     exist = False
     if_break = False
+
+    # idx = 0
+    # while True:
+    #     if idx == len(test_dataset) - 1:
+    #         break
+    #     frame_obj_list, frames_segmentation_mask = test_dataset[idx]
+    #     for object in frame_obj_list.frames[0].objects:
+    #         exist = torch.any(object.segment == True)
+    #     print(f'Index: {idx}\nObject Exists: {exist}') if exist else None
+    #     idx += 1
+
     while True:
         if if_break:
             break

@@ -11,7 +11,8 @@ from torchvision.transforms import ToTensor, Resize
 from training.utils.data_utils import Object, Frame, VideoDatapoint
 from tqdm import tqdm
 
-from ..helpers.configurations import *
+# from ..helpers.configurations import *
+from custom_models.helpers.configurations import *
 
 class MiniDataset(Dataset):
     
@@ -26,7 +27,7 @@ class MiniDataset(Dataset):
                  shuffle:bool=1,
                  **kwargs):
         '''Initialzie the class open the data folders and store them.
-        TODO Data Augmentatation
+        TODO Data Augmentatation DONE
         TODO Video Batches: DONE
                 Let's store images in self.images as [[fr0, fr1, fr2, frK-1], [fr0+K, fr1+K, fr2+K, frK+k-1], ...]
                 so a list of small videos. Thus during __getitem__ I can load those images and return them as BatchedVideoDatapoint
@@ -120,13 +121,13 @@ class MiniDataset(Dataset):
                         video_batch_image.append(rgb_path)
                         video_batch_seg_mask.append(interpolated_mask_path)
                     else:
-                        break
+                        break  # in 010_PKA there are some problems with the first images: image_files['azure']=None, same for 011 TKA and 035 PKA, for only few time_stamps
 
                     # Complete the video sequence
                     if (idx % len_video == len_video - 1) or (idx == len(timestamps)-1):
                         self.images.append(video_batch_image)
                         self.segmentation_masks.append(video_batch_seg_mask)
-   
+
         if False:
             # Create paths to data directories and data path containers
             data_paths = [root_path / ii for ii in split_folder_names]
@@ -170,16 +171,19 @@ class MiniDataset(Dataset):
 
     def __len__(self):
         return len(self.segmentation_masks)
-    
+
     def __getitem__(self, index):
         # Get file paths
         video_frames = self.images[index]
         video_frames_segmentation_mask = self.segmentation_masks[index]
+
         # Open the images and process (resizing to input size, padding, etc.)
         frame_obj_list, frames_segmentation_mask = self._open_and_process(video_frames, video_frames_segmentation_mask)
+
         # Create the VideoDatapoint
         size_x_y = frame_obj_list[0].data.shape[-2:]
         video_datapoint = VideoDatapoint(frame_obj_list, index, size_x_y)
+
         # Apply transforms
         for transform in self.transforms_:
             video_datapoint = transform(video_datapoint)
@@ -231,6 +235,7 @@ class MiniDataset(Dataset):
 
     def load_checkpoint_state(*args, **kwargs):
         pass
+
 
 if __name__ == '__main__':
     md = MiniDataset("small_train")
