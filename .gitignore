@@ -7,3 +7,4 @@ custom_models/finetune_checkpoints/*
 .vscode/*
 sam2_logs/*
 custom_models/debugging/*
+custom_models/models/sam2former/msdeformattn_patch.py
