@@ -1,9 +1,10 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import logging
 from copy import deepcopy
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union, Any
 
 import fvcore.nn.weight_init as weight_init
+from hydra.utils import instantiate
 from torch import nn
 from torch.nn import functional as F
 from torch.nn import Conv2d
@@ -44,11 +45,11 @@ class MaskFormerHead(nn.Module):
         input_shape: Dict[str, ShapeSpec],
         *,
         num_classes: int,
-        pixel_decoder: nn.Module,
+        pixel_decoder: Dict[str, Any],
         loss_weight: float = 1.0,
         ignore_value: int = -1,
         # extra parameters
-        transformer_predictor: nn.Module,
+        transformer_predictor: Dict[str, Any],
         transformer_in_feature: str,
     ):
         """
@@ -63,17 +64,16 @@ class MaskFormerHead(nn.Module):
             transformer_in_feature: input feature name to the transformer_predictor
         """
         super().__init__()
+        input_shape_original = deepcopy(input_shape)
         input_shape = sorted(input_shape.items(), key=lambda x: x[1].stride)
         self.in_features = [k for k, v in input_shape]
-        feature_strides = [v.stride for k, v in input_shape]
-        feature_channels = [v.channels for k, v in input_shape]
+        self.pixel_decoder = instantiate(pixel_decoder, _convert_="partial", input_shape=input_shape_original)
 
         self.ignore_value = ignore_value
         self.common_stride = 4
         self.loss_weight = loss_weight
 
-        self.pixel_decoder = pixel_decoder
-        self.predictor = transformer_predictor
+        self.predictor = instantiate(transformer_predictor)
         self.transformer_in_feature = transformer_in_feature
 
         self.num_classes = num_classes
