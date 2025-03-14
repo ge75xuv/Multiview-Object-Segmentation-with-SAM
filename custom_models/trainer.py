@@ -228,6 +228,8 @@ class Trainer:
         # NOTE HEADS UP
         for p in self.model.sam_prompt_encoder.parameters():
             nn.init.trunc_normal_(p, std=0.02)
+        for p in self.model.sam_mask_decoder.transformer.parameters():
+            nn.init.trunc_normal_(p, std=0.02)
         self._setup_ddp_distributed_training(distributed, accelerator)
         barrier()
 
