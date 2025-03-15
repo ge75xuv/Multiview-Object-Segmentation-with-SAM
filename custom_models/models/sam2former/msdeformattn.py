@@ -13,7 +13,7 @@ from torch.nn.init import xavier_uniform_, constant_, uniform_, normal_
 from torch.cuda.amp import autocast
 
 from .lib import _get_clones, _get_activation_fn, get_norm
-from .ops.modules import MSDeformAttn  #  annot find a solution at the moment TODO Upgrade nvcc and run ops
+from .ops.modules import MSDeformAttn  #  cannot find a solution at the moment TODO Upgrade nvcc and run ops
 from .lib import ShapeSpec
 
 
@@ -352,3 +352,23 @@ class MSDeformAttnPixelDecoder(nn.Module):
                 num_cur_levels += 1
 
         return self.mask_features(out[-1]), out[0], multi_scale_features
+
+if __name__ == '__main__':
+    inst = MSDeformAttnPixelDecoder(
+        input_shape={
+            'res2': ShapeSpec(channels=64, stride=4),
+            'res3': ShapeSpec(channels=128, stride=8),
+            'res4': ShapeSpec(channels=256, stride=16),
+            'res5': ShapeSpec(channels=512, stride=32),
+        },
+        transformer_dropout=0.1,
+        transformer_nheads=8,
+        transformer_dim_feedforward=1024,
+        transformer_enc_layers=6,
+        conv_dim=256,
+        mask_dim=256,
+        norm='BN',
+        transformer_in_features=['res2', 'res3', 'res4', 'res5'],
+        common_stride=4,
+    )
+    print(inst)

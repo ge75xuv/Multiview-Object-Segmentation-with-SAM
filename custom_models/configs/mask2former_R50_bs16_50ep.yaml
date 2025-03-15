@@ -4,12 +4,10 @@
 scratch:
   num_classes: 80
   mask_dim: 256
-  name: ["res2", "res3", "res4", "res5"]
-  channels: [256, 512, 1024, 2048]
-  height: [256, 128, 64, 32]
-  width: [256, 128, 64, 32]
+  name: ["res3", "res4", "res5"]
+  channels: [64, 128, 256]
   # Stride and common stride determines the extra fpn levels NOTE
-  stride: [4, 4, 4, 4]
+  stride: [4, 8, 16, 32]
   # input_shape: ${shape_spec:'res2', 3, 256, 256, 4}
   base_lr: 5.0e-6
   vision_lr: 3.0e-06
@@ -21,7 +19,7 @@ model:
   num_classes: ${scratch.num_classes}
   # Pixel Decoder
   pixel_decoder:
-    _target_: custom_models.models.sam2former.msdeformattn_patch.MSDeformAttnPixelDecoder
+    _target_: custom_models.models.sam2former.msdeformattn.MSDeformAttnPixelDecoder
     # input_shape: ${scratch.input_shape}
     transformer_dropout: 0.0
     transformer_nheads: 8
@@ -48,3 +46,6 @@ model:
     mask_dim: ${scratch.mask_dim}
     enforce_input_project: false
   transformer_in_feature: 'multi_scale_pixel_decoder'
+  # This is for the integration the sam2 since the decoder is initialized later
+  # If this does not work, just remove the _target_
+  # _recursive_: false

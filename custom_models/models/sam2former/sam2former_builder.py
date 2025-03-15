@@ -38,7 +38,7 @@ def build_sam2former(
     OmegaConf.resolve(cfg)
     print(f'OmegaConf resolved successfully')
     input_shape = {
-        cfg.scratch.name[idx]: ShapeSpec(cfg.scratch.channels[idx], cfg.scratch.height[idx], cfg.scratch.width[idx], cfg.scratch.stride[idx]) for idx in range(len(cfg.scratch.name))
+        cfg.scratch.name[idx]: ShapeSpec(channels=cfg.scratch.channels[idx], stride=cfg.scratch.stride[idx]) for idx in range(len(cfg.scratch.name))
         }
     model = instantiate(cfg.model, _recursive_=False, input_shape=input_shape)
     # _load_checkpoint(model, ckpt_path, kwargs['_load_partial'])
@@ -94,4 +94,11 @@ def _find_keys_in_sd(sd: dict):
 if __name__ == '__main__':
     cfg = 'mask2former_R50_bs16_50ep.yaml'
     model = build_sam2former(config_file=cfg)
+    device = next(model.parameters()).device
+    features = {
+        'res3': torch.randn([1, 64, 512//2, 512//2], device=device),
+        'res4': torch.randn([1, 128, 512//4, 512//4], device=device),
+        'res5': torch.randn([1, 256, 512//8, 512//8], device=device),
+    }
+    test = model(features)
     print(model)
