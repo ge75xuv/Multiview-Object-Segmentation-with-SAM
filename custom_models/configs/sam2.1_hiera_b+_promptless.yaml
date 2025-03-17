@@ -11,7 +11,7 @@ scratch:
   num_frames: 1
   # phases_per_epoch: 1
   # num_epochs: 40
-  max_epochs: 400
+  max_epochs: 460
 
 # dataset:
 #   # PATHS to Dataset
@@ -53,8 +53,8 @@ vos:
         #   hue: null
         # - _target_: training.dataset.transforms.ToTensorAPI
         - _target_: training.dataset.transforms.NormalizeAPI
-          mean: [0.485, 0.456, 0.406]
-          std: [0.229, 0.224, 0.225]
+          mean: [0.3551, 0.3500, 0.3469]
+          std: [0.2921, 0.2716, 0.2742]
 
 trainer:
   _target_: custom_models.trainer.Trainer

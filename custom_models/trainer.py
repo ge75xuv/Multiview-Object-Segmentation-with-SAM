@@ -226,10 +226,14 @@ class Trainer:
 
         self.load_checkpoint()
         # NOTE HEADS UP
-        for p in self.model.sam_prompt_encoder.parameters():
-            nn.init.trunc_normal_(p, std=0.02)
-        for p in self.model.sam_mask_decoder.transformer.parameters():
-            nn.init.trunc_normal_(p, std=0.02)
+        # We want to reset for the initial run. If we already started training then
+        # we should keep our weights
+        if self.epoch == 0:
+            print('Resetting the weights of prompt encoder and mask decoder transformer!')
+            for p in self.model.sam_prompt_encoder.parameters():
+                nn.init.trunc_normal_(p, std=0.02)
+            for p in self.model.sam_mask_decoder.transformer.parameters():
+                nn.init.trunc_normal_(p, std=0.02)
         self._setup_ddp_distributed_training(distributed, accelerator)
         barrier()
 
