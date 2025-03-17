@@ -7,7 +7,7 @@ scratch:
   name: ["res3", "res4", "res5"]
   channels: [64, 128, 256]
   # Stride and common stride determines the extra fpn levels NOTE
-  stride: [4, 8, 16, 32]
+  stride: [4, 4, 4]
   # input_shape: ${shape_spec:'res2', 3, 256, 256, 4}
   base_lr: 5.0e-6
   vision_lr: 3.0e-06

@@ -3,6 +3,7 @@
 
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
+from typing import Any, Dict
 
 import torch
 import torch.distributed
@@ -15,18 +16,19 @@ from torch.nn.init import trunc_normal_
 # from sam2.modeling.sam.transformer import TwoWayTransformer
 from sam2.modeling.sam2_utils import get_1d_sine_pe, MLP, select_closest_cond_frames
 
-from .mask2former_transformer_decoder import MultiScaleMaskedTransformerDecoder
+from .mask_former_head import MaskFormerHead
 
 # a large negative value as a placeholder score for missing objects
 NO_OBJ_SCORE = -1024.0
 
 
-class SAM2Base(torch.nn.Module):
+class SAM2FormerBase(torch.nn.Module):
     def __init__(
         self,
         image_encoder,
         memory_attention,
         memory_encoder,
+        mask_decoder_cfg: Dict[str, Any],
         num_maskmem=7,  # default 1 input frame + 6 previous frames
         image_size=512,
         backbone_stride=16,  # stride of the image backbone output
@@ -180,6 +182,7 @@ class SAM2Base(torch.nn.Module):
             self.no_obj_embed_spatial = torch.nn.Parameter(torch.zeros(1, self.mem_dim))
             trunc_normal_(self.no_obj_embed_spatial, std=0.02)
 
+        self.mask_decoder_cfg = mask_decoder_cfg
         self._build_sam_heads()
         self.max_cond_frames_in_attn = max_cond_frames_in_attn
 
@@ -222,14 +225,7 @@ class SAM2Base(torch.nn.Module):
         #     input_image_size=(self.image_size, self.image_size),
         #     mask_in_chans=16,
         # )
-        self.sam_mask_decoder = MultiScaleMaskedTransformerDecoder(self.sam_prompt_embed_dim,
-                                                                   num_classes=1,
-                                                                   num_queries=1,
-                                                                   nheads=1,
-                                                                   dim_feedforward=1,
-                                                                   dec_layers=1,
-                                                                   pre_norm=True,
-                                                                   )
+        self.sam_mask_decoder = MaskFormerHead(**self.mask_decoder_cfg)
         # self.sam_mask_decoder = MaskDecoder(
         #     num_multimask_outputs=3,
         #     transformer=TwoWayTransformer(

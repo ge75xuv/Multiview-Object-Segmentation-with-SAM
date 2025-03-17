@@ -2,7 +2,7 @@
 # Modified by Bowen Cheng from: https://github.com/facebookresearch/detr/blob/master/models/detr.py
 import logging
 import fvcore.nn.weight_init as weight_init
-from sam2.modeling.position_encoding import PositionEmbeddingSine
+from .position_encoding import PositionEmbeddingSine
 from typing import Optional
 import torch
 from torch import nn, Tensor
@@ -441,6 +441,7 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
         decoder_output = decoder_output.transpose(0, 1)
         outputs_class = self.class_embed(decoder_output)
         mask_embed = self.mask_embed(decoder_output)
+        # Instead of doing (mask_embed @ mask_features.flatten(-2)).view(1,b,h,w), do einsum
         outputs_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
 
         # NOTE: prediction is of higher-resolution

@@ -28,6 +28,10 @@ model_size_dict = {
         'config': 'custom_sam2.1_hiera_l.yaml',
         'ck': '/home/guests/tuna_gurbuz/prototype/models/sam2/checkpoints/sam2.1_hiera_large.pt',
         },
+    'sam2former': {
+        'config': 'sam2former_hiera_b+_promptless.yaml',
+        'ck': '/home/guests/tuna_gurbuz/prototype/models/sam2/checkpoints/sam2.1_hiera_large.pt',
+        },
 }
 
 seed = 123
@@ -49,8 +53,8 @@ def train():
     transforms = [ComposeAPI([NormalizeAPI(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], v2=True)])]
 
     # Dataset
-    train_dataset = MiniDataset('debug_open', len_video, input_image_size, object_labels, transforms, collate_fn, batch_size, shuffle, get_seg_mask=True)
-    valid_dataset = MiniDataset('val', len_video, input_image_size, object_labels, transforms, collate_fn, batch_size, shuffle, get_seg_mask=True)
+    train_dataset = MiniDataset('over_train', len_video, input_image_size, object_labels, transforms, collate_fn, batch_size, shuffle, get_seg_mask=True)
+    valid_dataset = MiniDataset('over_train', len_video, input_image_size, object_labels, transforms, collate_fn, batch_size, shuffle, get_seg_mask=True)
 
     # Show the data to test
     debug = False

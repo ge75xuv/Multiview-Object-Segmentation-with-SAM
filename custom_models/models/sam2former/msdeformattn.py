@@ -4,7 +4,7 @@ import numpy as np
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import fvcore.nn.weight_init as weight_init
-from sam2.modeling.position_encoding import PositionEmbeddingSine
+from .position_encoding import PositionEmbeddingSine
 import torch
 from torch import nn
 from torch.nn import Conv2d
