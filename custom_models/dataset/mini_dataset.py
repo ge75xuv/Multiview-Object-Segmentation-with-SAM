@@ -11,7 +11,7 @@ from torchvision.transforms import ToTensor, Resize
 from training.utils.data_utils import Object, Frame, VideoDatapoint
 from tqdm import tqdm
 
-# from ..helpers.configurations import *
+# from helpers.configurations import *
 from custom_models.helpers.configurations import *
 
 class MiniDataset(Dataset):
