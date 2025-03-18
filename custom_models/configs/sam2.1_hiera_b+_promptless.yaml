@@ -11,7 +11,7 @@ scratch:
   num_frames: 1
   # phases_per_epoch: 1
   # num_epochs: 40
-  max_epochs: 460
+  max_epochs: 2000
 
 # dataset:
 #   # PATHS to Dataset
@@ -336,9 +336,9 @@ trainer:
   # initialize from a SAM 2 checkpoint
   checkpoint:
     # NOTE: HEADS UP 
-    resume_from: sam2_logs/03_15_13_39/checkpoints/checkpoint.pt
+    resume_from: sam2_logs/03_17_13_31/checkpoints/checkpoint.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
-    save_freq: 10 # 0 only last checkpoint is saved.
+    save_freq: 50 # 0 only last checkpoint is saved.
     model_weight_initializer:
       _partial_: True
       _target_: training.utils.checkpoint_utils.load_state_dict_into_model

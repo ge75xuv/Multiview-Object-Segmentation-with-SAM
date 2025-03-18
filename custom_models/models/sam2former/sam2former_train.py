@@ -22,7 +22,7 @@ from sam2.utils.misc import concat_points
 from training.utils.data_utils import BatchedVideoDatapoint
 
 
-class SAM2Train(SAM2FormerBase):
+class SAM2FormerTrain(SAM2FormerBase):
     def __init__(
         self,
         image_encoder,
@@ -165,12 +165,12 @@ class SAM2Train(SAM2FormerBase):
 
         # Randomly decide whether to use point inputs or mask inputs
         if self.training:
-            prob_to_use_pt_input = self.prob_to_use_pt_input_for_train
-            prob_to_use_box_input = self.prob_to_use_box_input_for_train
-            num_frames_to_correct = self.num_frames_to_correct_for_train
-            rand_frames_to_correct = self.rand_frames_to_correct_for_train
-            num_init_cond_frames = self.num_init_cond_frames_for_train
-            rand_init_cond_frames = self.rand_init_cond_frames_for_train
+            prob_to_use_pt_input = 1.0
+            prob_to_use_box_input = 0.0
+            num_frames_to_correct = 1
+            rand_frames_to_correct = 0
+            num_init_cond_frames = 1
+            rand_init_cond_frames = False
         else:
             prob_to_use_pt_input = self.prob_to_use_pt_input_for_eval
             prob_to_use_box_input = self.prob_to_use_box_input_for_eval

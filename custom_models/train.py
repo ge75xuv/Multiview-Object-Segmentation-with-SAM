@@ -10,7 +10,7 @@ from tqdm import tqdm
 from training.optimizer import GradientClipper
 from training.dataset.transforms import ComposeAPI, NormalizeAPI
 
-from .custom_model_builder import build_sam2
+from .custom_model_builder import build_sam2, build_sam2former
 from .dataset.mini_dataset import MiniDataset
 from .dataset.collate_fn import collate_fn
 from .helpers.configurations import TRACK_TO_METAINFO
@@ -34,6 +34,13 @@ model_size_dict = {
         },
 }
 
+builder_type = {
+    'small': build_sam2,
+    'base': build_sam2,
+    'large': build_sam2,
+    'sam2former': build_sam2former,
+}
+
 seed = 123
 torch.manual_seed(seed)
 np.random.seed(seed)
@@ -45,9 +52,9 @@ def train():
     lr = 5e-6
     shuffle = False
     len_video = 1
-    model_size = 'small'
+    model_size = 'sam2former'
     input_image_size = 512
-    object_labels = [8, 9, 10]
+    object_labels = [10]
     len_objects = len(object_labels)
     #  The list structure is just the way hydra parses the .yaml
     transforms = [ComposeAPI([NormalizeAPI(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], v2=True)])]
@@ -83,7 +90,8 @@ def train():
     print(f'Length of the dataloader: {iters_per_epoch}\n')
     config = model_size_dict[model_size]['config']
     ck = model_size_dict[model_size]['ck']
-    model, loss, optim = build_sam2(config, ck, mode='train', _load_partial=False, device=device)
+    build_fcn = builder_type[model_size]
+    model, loss, optim = build_fcn(config, ck, mode='train', _load_partial=False, device=device)
     print('Model building completed')
 
     scaler = GradScaler(device=device, enabled=True, )

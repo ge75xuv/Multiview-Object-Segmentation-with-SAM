@@ -67,12 +67,14 @@ class MaskFormerHead(nn.Module):
         input_shape_original = deepcopy(input_shape)
         input_shape = sorted(input_shape.items(), key=lambda x: x[1].stride)
         self.in_features = [k for k, v in input_shape]
+        pixel_decoder['_target_'] = pixel_decoder.pop('target_holder')
         self.pixel_decoder = instantiate(pixel_decoder, _convert_="partial", input_shape=input_shape_original)
 
         self.ignore_value = ignore_value
         self.common_stride = 4
         self.loss_weight = loss_weight
 
+        transformer_predictor['_target_'] = transformer_predictor.pop('target_holder')
         self.predictor = instantiate(transformer_predictor)
         self.transformer_in_feature = transformer_in_feature
 

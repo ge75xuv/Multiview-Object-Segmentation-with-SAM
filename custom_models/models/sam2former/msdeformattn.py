@@ -13,7 +13,7 @@ from torch.nn.init import xavier_uniform_, constant_, uniform_, normal_
 from torch.cuda.amp import autocast
 
 from .lib import _get_clones, _get_activation_fn, get_norm
-from .ops.modules import MSDeformAttn  #  cannot find a solution at the moment TODO Upgrade nvcc and run ops
+from .ops.modules import MSDeformAttn
 from .lib import ShapeSpec
 
 

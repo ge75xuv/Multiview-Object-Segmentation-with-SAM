@@ -16,6 +16,7 @@ from torch.nn.init import trunc_normal_
 # from sam2.modeling.sam.transformer import TwoWayTransformer
 from sam2.modeling.sam2_utils import get_1d_sine_pe, MLP, select_closest_cond_frames
 
+from .lib import ShapeSpec
 from .mask_former_head import MaskFormerHead
 
 # a large negative value as a placeholder score for missing objects
@@ -154,10 +155,11 @@ class SAM2FormerBase(torch.nn.Module):
         # On frames with mask input, whether to directly output the input mask without
         # using a SAM prompt encoder + mask decoder
         self.use_mask_input_as_output_without_sam = use_mask_input_as_output_without_sam
-        self.multimask_output_in_sam = multimask_output_in_sam
+        # HEADS-UP
+        self.multimask_output_in_sam = False
         self.multimask_min_pt_num = multimask_min_pt_num
         self.multimask_max_pt_num = multimask_max_pt_num
-        self.multimask_output_for_tracking = multimask_output_for_tracking
+        self.multimask_output_for_tracking = False
         self.use_multimask_token_for_obj_ptr = use_multimask_token_for_obj_ptr
         self.iou_prediction_use_sigmoid = iou_prediction_use_sigmoid
 
@@ -225,7 +227,13 @@ class SAM2FormerBase(torch.nn.Module):
         #     input_image_size=(self.image_size, self.image_size),
         #     mask_in_chans=16,
         # )
-        self.sam_mask_decoder = MaskFormerHead(**self.mask_decoder_cfg)
+        name = self.mask_decoder_cfg.pop('name')
+        channels = self.mask_decoder_cfg.pop('channels')
+        stride = self.mask_decoder_cfg.pop('stride')
+        input_shape = {
+        name[idx]: ShapeSpec(channels=channels[idx], stride=stride[idx]) for idx in range(len(name))
+        }
+        self.sam_mask_decoder = MaskFormerHead(input_shape=input_shape, **self.mask_decoder_cfg)
         # self.sam_mask_decoder = MaskDecoder(
         #     num_multimask_outputs=3,
         #     transformer=TwoWayTransformer(
@@ -313,20 +321,24 @@ class SAM2FormerBase(torch.nn.Module):
         assert backbone_features.size(2) == self.sam_image_embedding_size
         assert backbone_features.size(3) == self.sam_image_embedding_size
 
-        (
-            low_res_multimasks,
-            ious,
-            sam_output_tokens,
-            object_score_logits,
-        ) = self.sam_mask_decoder(
-            image_embeddings=backbone_features,
-            ##TODO The image has the positional encodings of the mask prompt, 
-            # check how they do in the mask2former
-            multimask_output=multimask_output,
-            repeat_image=False,  # the image is already batched
-            high_res_features=high_res_features,
-        )
-        self.sam_mask_decoder()
+        # (
+        #     low_res_multimasks,
+        #     ious,
+        #     sam_output_tokens,
+        #     object_score_logits,
+        # ) = self.sam_mask_decoder(
+        #     image_embeddings=backbone_features,
+        #     ##TODO The image has the positional encodings of the mask prompt, 
+        #     # check how they do in the mask2former
+        #     multimask_output=multimask_output,
+        #     repeat_image=False,  # the image is already batched
+        #     high_res_features=high_res_features,
+        # )
+        
+        total_features = high_res_features + [backbone_features]
+        assert len(total_features) == len(self.sam_mask_decoder.in_features), "Given number of input features and calculated input features do not match"
+        in_feature_dict = {name:feat for name, feat in zip(self.sam_mask_decoder.in_features, total_features)}
+        predictions = self.sam_mask_decoder(in_feature_dict)
         if self.pred_obj_scores:
             is_obj_appearing = object_score_logits > 0
 
@@ -438,15 +450,15 @@ class SAM2FormerBase(torch.nn.Module):
     def forward_image(self, img_batch: torch.Tensor):
         """Get the image feature on the input batch."""
         backbone_out = self.image_encoder(img_batch)
-        if self.use_high_res_features_in_sam:
-            # precompute projected level 0 and level 1 features in SAM decoder
-            # to avoid running it again on every SAM click
-            backbone_out["backbone_fpn"][0] = self.sam_mask_decoder.conv_s0(
-                backbone_out["backbone_fpn"][0]
-            )
-            backbone_out["backbone_fpn"][1] = self.sam_mask_decoder.conv_s1(
-                backbone_out["backbone_fpn"][1]
-            )
+        # if self.use_high_res_features_in_sam:
+        #     # precompute projected level 0 and level 1 features in SAM decoder
+        #     # to avoid running it again on every SAM click
+        #     backbone_out["backbone_fpn"][0] = self.sam_mask_decoder.conv_s0(
+        #         backbone_out["backbone_fpn"][0]
+        #     )
+        #     backbone_out["backbone_fpn"][1] = self.sam_mask_decoder.conv_s1(
+        #         backbone_out["backbone_fpn"][1]
+        #     )
         return backbone_out
 
     def _prepare_backbone_features(self, backbone_out):

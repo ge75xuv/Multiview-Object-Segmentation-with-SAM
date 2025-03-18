@@ -19,6 +19,8 @@ from torch.autograd import Function
 from torch.autograd.function import once_differentiable
 
 try:
+    import sys
+    sys.path.append('/home/guests/tuna_gurbuz/msda_sp')
     import MultiScaleDeformableAttention as MSDA
 except ModuleNotFoundError as e:
     info_string = (

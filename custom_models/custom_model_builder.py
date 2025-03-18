@@ -44,7 +44,7 @@ def build_sam2(
     OmegaConf.resolve(cfg)
     print(f'OmegaConf resolved successfully')
     # Instantiate model, loss, load weights, freeze backbone
-    model = instantiate(cfg.model, _recursive_=True)
+    model = instantiate(cfg.trainer.model, _recursive_=True)
     loss = instantiate(cfg.loss, _recursive_=True)
     _load_checkpoint(model, ckpt_path, kwargs['_load_partial'])
     _remove_parameters_of_backbone(model)
@@ -91,6 +91,35 @@ def build_sam2_predict(
     model = model.to(device)
     model.eval()
     return model, cfg[training_key]['scratch']['obj_labels']
+
+def build_sam2former(
+    config_file,
+    ckpt_path=None,
+    device="cuda",
+    mode="eval",
+    hydra_overrides_extra=[],
+    apply_postprocessing=True,
+    **kwargs,
+):
+    # Read config and init model
+    cfg = compose(config_name=config_file, overrides=hydra_overrides_extra)
+    # Register new operation becaise of learning rate
+    OmegaConf.register_new_resolver("divide", lambda x, y: x / y)
+    # Resolve
+    OmegaConf.resolve(cfg)
+    print(f'OmegaConf resolved successfully')
+    # Instantiate model, loss, load weights, freeze backbone
+    model = instantiate(cfg.trainer.model, _recursive_=True)
+    # _load_checkpoint(model, ckpt_path, kwargs['_load_partial'])
+    _remove_parameters_of_backbone(model)
+    # send model to device
+    model = model.to(device)
+    if mode == "eval":
+        model.eval()
+    optim = lambda:0
+    optim.optimizer = torch.optim.AdamW(model.parameters())
+    loss = torch.nn.MSELoss()
+    return model, loss, optim
 
 def _load_checkpoint(model, ckpt_path, _load_partial:bool=False):
     if ckpt_path is not None:

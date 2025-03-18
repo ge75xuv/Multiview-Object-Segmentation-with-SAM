@@ -9,3 +9,6 @@ custom_models/finetune_checkpoints/*
 sam2_logs/*
 custom_models/debugging/*
 custom_models/models/sam2former/msdeformattn_patch.py
+custom_models/models/sam2former/ops/build_git
+custom_models/models/sam2former/ops/build
+!custom_models/models/sam2former/ops/build/MultiScaleDeformableAttention.cpython-312-x86_64-linux-gnu.so

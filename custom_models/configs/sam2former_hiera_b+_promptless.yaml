@@ -4,14 +4,18 @@ scratch:
   resolution: 512
   train_batch_size: 1
   num_train_workers: 2
-  # max_num_objects: 3
   base_lr: 5.0e-6
   vision_lr: 3.0e-06
   obj_labels: [10]  # [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 24]
   num_frames: 1
-  # phases_per_epoch: 1
-  # num_epochs: 40
   max_epochs: 400
+  # Decoder
+  num_classes: 80
+  mask_dim: 256
+  name: ["res3", "res4", "res5"]
+  channels: [256, 256, 256]
+  # Stride and common stride determines the extra fpn levels NOTE
+  stride: [4, 4, 4]
 
 # dataset:
 #   # PATHS to Dataset
@@ -149,12 +153,13 @@ trainer:
     # Decoder
     mask_decoder_cfg:
       # _target_: custom_models.models.sam2former.mask_former_head.MaskFormerHead
-      _recursive_: false
-      # input_shape: ${scratch.input_shape}
+      name: ${scratch.name}
+      channels: ${scratch.channels}
+      stride: ${scratch.stride}
       num_classes: ${scratch.num_classes}
       # Pixel Decoder
       pixel_decoder:
-        _target_: custom_models.models.sam2former.msdeformattn.MSDeformAttnPixelDecoder
+        target_holder: custom_models.models.sam2former.msdeformattn.MSDeformAttnPixelDecoder
         # input_shape: ${scratch.input_shape}
         transformer_dropout: 0.0
         transformer_nheads: 8
@@ -169,7 +174,7 @@ trainer:
       loss_weight: 1.0
       ignore_value: 255
       transformer_predictor:
-        _target_: custom_models.models.sam2former.mask2former_transformer_decoder.MultiScaleMaskedTransformerDecoder
+        target_holder: custom_models.models.sam2former.mask2former_transformer_decoder.MultiScaleMaskedTransformerDecoder
         in_channels: 256
         num_classes: ${scratch.num_classes}
         hidden_dim: 256
