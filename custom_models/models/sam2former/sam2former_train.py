@@ -150,10 +150,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         """
         # Load the ground-truth masks on all frames (so that we can later
         # sample correction points from them)
-        # gt_masks_per_frame = {
-        #     stage_id: targets.segments.unsqueeze(1)  # [B, 1, H_im, W_im]
-        #     for stage_id, targets in enumerate(input.find_targets)
-        # }
+
         gt_masks_per_frame = {
             stage_id: masks.unsqueeze(1)  # [B, 1, H_im, W_im]
             for stage_id, masks in enumerate(input.masks)
@@ -165,44 +162,23 @@ class SAM2FormerTrain(SAM2FormerBase):
 
         # Randomly decide whether to use point inputs or mask inputs
         if self.training:
-            prob_to_use_pt_input = 1.0
-            prob_to_use_box_input = 0.0
-            num_frames_to_correct = 1
-            rand_frames_to_correct = 0
             num_init_cond_frames = 1
             rand_init_cond_frames = False
         else:
-            prob_to_use_pt_input = self.prob_to_use_pt_input_for_eval
-            prob_to_use_box_input = self.prob_to_use_box_input_for_eval
-            num_frames_to_correct = self.num_frames_to_correct_for_eval
-            rand_frames_to_correct = self.rand_frames_to_correct_for_eval
             num_init_cond_frames = self.num_init_cond_frames_for_eval
             rand_init_cond_frames = self.rand_init_cond_frames_for_eval
+
         if num_frames == 1:
             # here we handle a special case for mixing video + SAM on image training,
             # where we force using point input for the SAM task on static images
-            prob_to_use_pt_input = 1.0
-            num_frames_to_correct = 1
             num_init_cond_frames = 1
         assert num_init_cond_frames >= 1
-        # (here `self.rng.random()` returns value in range 0.0 <= X < 1.0)
-        use_pt_input = self.rng.random() < prob_to_use_pt_input
+
         if rand_init_cond_frames and num_init_cond_frames > 1:
             # randomly select 1 to `num_init_cond_frames` frames as initial conditioning frames
             num_init_cond_frames = self.rng.integers(
                 1, num_init_cond_frames, endpoint=True
             )
-        if (
-            use_pt_input
-            and rand_frames_to_correct
-            and num_frames_to_correct > num_init_cond_frames
-        ):
-            # randomly select `num_init_cond_frames` to `num_frames_to_correct` frames to sample
-            # correction clicks (only for the case of point input)
-            num_frames_to_correct = self.rng.integers(
-                num_init_cond_frames, num_frames_to_correct, endpoint=True
-            )
-        backbone_out["use_pt_input"] = use_pt_input
 
         # Sample initial conditioning frames
         if num_init_cond_frames == 1:
@@ -218,52 +194,6 @@ class SAM2FormerTrain(SAM2FormerBase):
         backbone_out["frames_not_in_init_cond"] = [
             t for t in range(start_frame_idx, num_frames) if t not in init_cond_frames
         ]
-        # Prepare mask or point inputs on initial conditioning frames
-        backbone_out["mask_inputs_per_frame"] = {}  # {frame_idx: <input_masks>}
-        backbone_out["point_inputs_per_frame"] = {}  # {frame_idx: <input_points>}
-        for t in init_cond_frames:
-            if not use_pt_input:
-                backbone_out["mask_inputs_per_frame"][t] = gt_masks_per_frame[t]
-            else:
-                # During training # P(box) = prob_to_use_pt_input * prob_to_use_box_input
-                use_box_input = self.rng.random() < prob_to_use_box_input
-                if use_box_input:
-                    points, labels = sample_box_points(
-                        gt_masks_per_frame[t],
-                    )
-                else:
-                    # (here we only sample **one initial point** on initial conditioning frames from the
-                    # ground-truth mask; we may sample more correction points on the fly)
-                    points, labels = get_next_point(
-                        gt_masks=gt_masks_per_frame[t],
-                        pred_masks=None,
-                        method=(
-                            "uniform" if self.training else self.pt_sampling_for_eval
-                        ),
-                    )
-
-                point_inputs = {"point_coords": points, "point_labels": labels}
-                backbone_out["point_inputs_per_frame"][t] = point_inputs
-
-        # Sample frames where we will add correction clicks on the fly
-        # based on the error between prediction and ground-truth masks
-        if not use_pt_input:
-            # no correction points will be sampled when using mask inputs
-            frames_to_add_correction_pt = []
-        elif num_frames_to_correct == num_init_cond_frames:
-            frames_to_add_correction_pt = init_cond_frames
-        else:
-            assert num_frames_to_correct > num_init_cond_frames
-            # initial cond frame + randomly selected remaining frames (without replacement)
-            extra_num = num_frames_to_correct - num_init_cond_frames
-            frames_to_add_correction_pt = (
-                init_cond_frames
-                + self.rng.choice(
-                    backbone_out["frames_not_in_init_cond"], extra_num, replace=False
-                ).tolist()
-            )
-        backbone_out["frames_to_add_correction_pt"] = frames_to_add_correction_pt
-
         return backbone_out
 
     def forward_tracking(
@@ -284,7 +214,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         # Starting the stage loop
         num_frames = backbone_out["num_frames"]
         init_cond_frames = backbone_out["init_cond_frames"]
-        frames_to_add_correction_pt = backbone_out["frames_to_add_correction_pt"]
+        # frames_to_add_correction_pt = backbone_out["frames_to_add_correction_pt"]
         # first process all the initial conditioning frames to encode them as memory,
         # and then conditioning on them to track the remaining frames
         processing_order = init_cond_frames + backbone_out["frames_not_in_init_cond"]
@@ -319,17 +249,17 @@ class SAM2FormerTrain(SAM2FormerBase):
                 current_vision_feats=current_vision_feats,
                 current_vision_pos_embeds=current_vision_pos_embeds,
                 feat_sizes=feat_sizes,
-                point_inputs=backbone_out["point_inputs_per_frame"].get(stage_id, None),
-                mask_inputs=backbone_out["mask_inputs_per_frame"].get(stage_id, None),
+                # point_inputs=backbone_out["point_inputs_per_frame"].get(stage_id, None),
+                # mask_inputs=backbone_out["mask_inputs_per_frame"].get(stage_id, None),
                 gt_masks=backbone_out["gt_masks_per_frame"].get(stage_id, None),
-                frames_to_add_correction_pt=frames_to_add_correction_pt,
+                # frames_to_add_correction_pt=frames_to_add_correction_pt,
                 output_dict=output_dict,
                 num_frames=num_frames,
             )
             # Append the output, depending on whether it's a conditioning frame
             add_output_as_cond_frame = stage_id in init_cond_frames or (
                 self.add_all_frames_to_correct_as_cond
-                and stage_id in frames_to_add_correction_pt
+                # and stage_id in frames_to_add_correction_pt
             )
             if add_output_as_cond_frame:
                 output_dict["cond_frame_outputs"][stage_id] = current_out
@@ -357,8 +287,8 @@ class SAM2FormerTrain(SAM2FormerBase):
         current_vision_feats,
         current_vision_pos_embeds,
         feat_sizes,
-        point_inputs,
-        mask_inputs,
+        # point_inputs,
+        # mask_inputs,
         output_dict,
         num_frames,
         track_in_reverse=False,  # tracking in reverse time order (for demo usage)
@@ -375,8 +305,8 @@ class SAM2FormerTrain(SAM2FormerBase):
             current_vision_feats,
             current_vision_pos_embeds,
             feat_sizes,
-            point_inputs,
-            mask_inputs,
+            # point_inputs,
+            # mask_inputs,
             output_dict,
             num_frames,
             track_in_reverse,
@@ -394,7 +324,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         # current_out["multistep_pred_multimasks"] = [low_res_multimasks]
         # current_out["multistep_pred_multimasks_high_res"] = [high_res_multimasks]
         # current_out["multistep_pred_ious"] = [ious]
-        current_out["multistep_point_inputs"] = [point_inputs]
+        # current_out["multistep_point_inputs"] = [point_inputs]
         # current_out["multistep_object_score_logits"] = [object_score_logits]
 
         # Optionally, sample correction points iteratively to correct the mask
@@ -433,7 +363,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         self._encode_memory_in_output(
             current_vision_feats,
             feat_sizes,
-            point_inputs,
+            # point_inputs,
             run_mem_encoder,
             high_res_masks,
             # object_score_logits,

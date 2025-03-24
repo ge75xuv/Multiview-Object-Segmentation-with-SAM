@@ -617,7 +617,7 @@ class SAM2FormerBase(torch.nn.Module):
         feat_sizes,
         pred_masks_high_res,
         # object_score_logits,
-        is_mask_from_pts,
+        # is_mask_from_pts,
     ):
         """Encode the current image and its prediction into a memory feature."""
         B = current_vision_feats[-1].size(1)  # batch size on this frame
@@ -633,7 +633,7 @@ class SAM2FormerBase(torch.nn.Module):
                 pred_masks_high_res
             )
         # scale the raw mask logits with a temperature before applying sigmoid
-        binarize = self.binarize_mask_from_pts_for_mem_enc and is_mask_from_pts
+        binarize = self.binarize_mask_from_pts_for_mem_enc  # and is_mask_from_pts
         if binarize and not self.training:
             mask_for_mem = (pred_masks_high_res > 0).float()
         else:
@@ -670,14 +670,15 @@ class SAM2FormerBase(torch.nn.Module):
         current_vision_feats,
         current_vision_pos_embeds,
         feat_sizes,
-        point_inputs,
-        mask_inputs,
+        # point_inputs,
+        # mask_inputs,
         output_dict,
         num_frames,
         track_in_reverse,
         prev_sam_mask_logits,
     ):
-        current_out = {"point_inputs": point_inputs, "mask_inputs": mask_inputs}
+        # current_out = {"point_inputs": point_inputs, "mask_inputs": mask_inputs}
+        current_out = {}
         # High-resolution feature maps for the SAM head, reshape (HW)BC => BCHW
         if len(current_vision_feats) > 1:
             high_res_features = [
@@ -686,37 +687,38 @@ class SAM2FormerBase(torch.nn.Module):
             ]
         else:
             high_res_features = None
-        if mask_inputs is not None and self.use_mask_input_as_output_without_sam:
-            # When use_mask_input_as_output_without_sam=True, we directly output the mask input
-            # (see it as a GT mask) without using a SAM prompt encoder + mask decoder.
-            pix_feat = current_vision_feats[-1].permute(1, 2, 0)
-            pix_feat = pix_feat.view(-1, self.hidden_dim, *feat_sizes[-1])
-            sam_outputs = self._use_mask_as_output(
-                pix_feat, high_res_features, mask_inputs
-            )
-        else:
-            # fused the visual feature with previous memory features in the memory bank
-            pix_feat = self._prepare_memory_conditioned_features(
-                frame_idx=frame_idx,
-                is_init_cond_frame=is_init_cond_frame,
-                current_vision_feats=current_vision_feats[-1:],
-                current_vision_pos_embeds=current_vision_pos_embeds[-1:],
-                feat_sizes=feat_sizes[-1:],
-                output_dict=output_dict,
-                num_frames=num_frames,
-                track_in_reverse=track_in_reverse,
-            )
+        # if mask_inputs is not None and self.use_mask_input_as_output_without_sam:
+        #     # When use_mask_input_as_output_without_sam=True, we directly output the mask input
+        #     # (see it as a GT mask) without using a SAM prompt encoder + mask decoder.
+        #     pix_feat = current_vision_feats[-1].permute(1, 2, 0)
+        #     pix_feat = pix_feat.view(-1, self.hidden_dim, *feat_sizes[-1])
+        #     sam_outputs = self._use_mask_as_output(
+        #         pix_feat, high_res_features, mask_inputs
+        #     )
+        # else:
+        # fused the visual feature with previous memory features in the memory bank
+        pix_feat = self._prepare_memory_conditioned_features(
+            frame_idx=frame_idx,
+            is_init_cond_frame=is_init_cond_frame,
+            current_vision_feats=current_vision_feats[-1:],
+            current_vision_pos_embeds=current_vision_pos_embeds[-1:],
+            feat_sizes=feat_sizes[-1:],
+            output_dict=output_dict,
+            num_frames=num_frames,
+            track_in_reverse=track_in_reverse,
+        )
             # apply SAM-style segmentation head
             # here we might feed previously predicted low-res SAM mask logits into the SAM mask decoder,
             # e.g. in demo where such logits come from earlier interaction instead of correction sampling
             # (in this case, any `mask_inputs` shouldn't reach here as they are sent to _use_mask_as_output instead)
-            if prev_sam_mask_logits is not None:
-                assert point_inputs is not None and mask_inputs is None
-                mask_inputs = prev_sam_mask_logits
-            sam_outputs = self._forward_sam_heads(
+            
+            # if prev_sam_mask_logits is not None:
+            #     assert point_inputs is not None and mask_inputs is None
+            #     mask_inputs = prev_sam_mask_logits
+        sam_outputs = self._forward_sam_heads(
                 backbone_features=pix_feat,
-                point_inputs=point_inputs,
-                mask_inputs=mask_inputs,
+                # point_inputs=point_inputs,
+                # mask_inputs=mask_inputs,
                 high_res_features=high_res_features,
             )
 
@@ -726,7 +728,7 @@ class SAM2FormerBase(torch.nn.Module):
         self,
         current_vision_feats,
         feat_sizes,
-        point_inputs,
+        # point_inputs,
         run_mem_encoder,
         high_res_masks,
         # object_score_logits,
@@ -739,7 +741,7 @@ class SAM2FormerBase(torch.nn.Module):
                 feat_sizes=feat_sizes,
                 pred_masks_high_res=high_res_masks_for_mem_enc,
                 # object_score_logits=object_score_logits,
-                is_mask_from_pts=(point_inputs is not None),
+                # is_mask_from_pts=(point_inputs is not None),
             )
             current_out["maskmem_features"] = maskmem_features
             current_out["maskmem_pos_enc"] = maskmem_pos_enc

@@ -51,7 +51,7 @@ def train():
     batch_size = 1
     lr = 5e-6
     shuffle = False
-    len_video = 2
+    len_video = 1
     model_size = 'sam2former'
     input_image_size = 512
     object_labels = [10]
