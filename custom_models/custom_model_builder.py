@@ -44,7 +44,7 @@ def build_sam2(
     OmegaConf.resolve(cfg)
     print(f'OmegaConf resolved successfully')
     # Instantiate model, loss, load weights, freeze backbone
-    model = instantiate(cfg.trainer.model, _recursive_=True)
+    model = instantiate(cfg.model, _recursive_=True)
     loss = instantiate(cfg.loss, _recursive_=True)
     _load_checkpoint(model, ckpt_path, kwargs['_load_partial'])
     _remove_parameters_of_backbone(model)
