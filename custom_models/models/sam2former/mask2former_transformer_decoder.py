@@ -366,7 +366,7 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
 
         return ret
 
-    def forward(self, x, mask_features, mask = None):
+    def forward(self, x, mask_features, mask=None):
         # x is a list of multi-scale feature
         assert len(x) == self.num_feature_levels
         src = []
@@ -430,6 +430,7 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
         out = {
             'pred_logits': predictions_class[-1],
             'pred_masks': predictions_mask[-1],
+            'transformer_outputs': output,
             'aux_outputs': self._set_aux_loss(
                 predictions_class if self.mask_classification else None, predictions_mask
             )

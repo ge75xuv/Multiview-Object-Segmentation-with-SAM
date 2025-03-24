@@ -384,48 +384,44 @@ class SAM2FormerTrain(SAM2FormerBase):
         )
 
         (
-            low_res_multimasks,
-            high_res_multimasks,
-            ious,
             low_res_masks,
             high_res_masks,
             obj_ptr,
-            object_score_logits,
         ) = sam_outputs
 
         current_out["multistep_pred_masks"] = low_res_masks
         current_out["multistep_pred_masks_high_res"] = high_res_masks
-        current_out["multistep_pred_multimasks"] = [low_res_multimasks]
-        current_out["multistep_pred_multimasks_high_res"] = [high_res_multimasks]
-        current_out["multistep_pred_ious"] = [ious]
+        # current_out["multistep_pred_multimasks"] = [low_res_multimasks]
+        # current_out["multistep_pred_multimasks_high_res"] = [high_res_multimasks]
+        # current_out["multistep_pred_ious"] = [ious]
         current_out["multistep_point_inputs"] = [point_inputs]
-        current_out["multistep_object_score_logits"] = [object_score_logits]
+        # current_out["multistep_object_score_logits"] = [object_score_logits]
 
         # Optionally, sample correction points iteratively to correct the mask
-        if frame_idx in frames_to_add_correction_pt:
-            point_inputs, final_sam_outputs = self._iter_correct_pt_sampling(
-                is_init_cond_frame,
-                point_inputs,
-                gt_masks,
-                high_res_features,
-                pix_feat,
-                low_res_multimasks,
-                high_res_multimasks,
-                ious,
-                low_res_masks,
-                high_res_masks,
-                object_score_logits,
-                current_out,
-            )
-            (
-                _,
-                _,
-                _,
-                low_res_masks,
-                high_res_masks,
-                obj_ptr,
-                object_score_logits,
-            ) = final_sam_outputs
+        # if frame_idx in frames_to_add_correction_pt:
+        #     point_inputs, final_sam_outputs = self._iter_correct_pt_sampling(
+        #         is_init_cond_frame,
+        #         point_inputs,
+        #         gt_masks,
+        #         high_res_features,
+        #         pix_feat,
+        #         low_res_multimasks,
+        #         high_res_multimasks,
+        #         ious,
+        #         low_res_masks,
+        #         high_res_masks,
+        #         object_score_logits,
+        #         current_out,
+        #     )
+        #     (
+        #         _,
+        #         _,
+        #         _,
+        #         low_res_masks,
+        #         high_res_masks,
+        #         obj_ptr,
+        #         object_score_logits,
+        #     ) = final_sam_outputs
 
         # Use the final prediction (after all correction steps for output and eval)
         current_out["pred_masks"] = low_res_masks
@@ -440,7 +436,7 @@ class SAM2FormerTrain(SAM2FormerBase):
             point_inputs,
             run_mem_encoder,
             high_res_masks,
-            object_score_logits,
+            # object_score_logits,
             current_out,
         )
         return current_out

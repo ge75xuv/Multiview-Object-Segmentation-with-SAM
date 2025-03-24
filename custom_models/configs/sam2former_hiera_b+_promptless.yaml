@@ -10,7 +10,8 @@ scratch:
   num_frames: 1
   max_epochs: 400
   # Decoder
-  num_classes: 80
+  num_queries: 23
+  num_classes: 23
   mask_dim: 256
   name: ["res3", "res4", "res5"]
   channels: [256, 256, 256]
@@ -178,7 +179,7 @@ trainer:
         in_channels: 256
         num_classes: ${scratch.num_classes}
         hidden_dim: 256
-        num_queries: 100
+        num_queries: ${scratch.num_queries}
         nheads: 8
         dim_feedforward: 2048
         dec_layers: 10
@@ -377,7 +378,7 @@ trainer:
   # initialize from a SAM 2 checkpoint
   checkpoint:
     # NOTE: HEADS UP 
-    resume_from: sam2_logs/03_15_13_39/checkpoints/checkpoint.pt
+    # resume_from: sam2_logs/03_15_13_39/checkpoints/checkpoint.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
     save_freq: 10 # 0 only last checkpoint is saved.
     model_weight_initializer:
