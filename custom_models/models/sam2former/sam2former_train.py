@@ -268,15 +268,23 @@ class SAM2FormerTrain(SAM2FormerBase):
 
         if return_dict:
             return output_dict
+
+        # Get rid of unnecessary keys in the output_dict
+        used_keys = ['pred_masks', 'pred_masks_high_res', 'pred_logits', 'aux_outputs']
+        for key, value in output_dict.items():  # cond_frame_outputs, non_cond_frame_outputs
+            for k, v in value.items():  # frame_idx
+                frame_out = output_dict[key][k]
+                output_dict[key][k] = {out_type: out_val for out_type, out_val in frame_out.items() if out_type in used_keys}
+
         # turn `output_dict` into a list for loss function
         all_frame_outputs = {}
         all_frame_outputs.update(output_dict["cond_frame_outputs"])
         all_frame_outputs.update(output_dict["non_cond_frame_outputs"])
-        all_frame_outputs = [all_frame_outputs[t] for t in range(num_frames)]
+        # all_frame_outputs = [all_frame_outputs[t] for t in range(num_frames)]
         # Make DDP happy with activation checkpointing by removing unused keys
-        all_frame_outputs = [
-            {k: v for k, v in d.items() if k != "obj_ptr"} for d in all_frame_outputs
-        ]
+        # all_frame_outputs = [
+        #     {k: v for k, v in d.items() if k != "obj_ptr"} for d in all_frame_outputs
+        # ]
 
         return all_frame_outputs
 
@@ -317,10 +325,14 @@ class SAM2FormerTrain(SAM2FormerBase):
             low_res_masks,
             high_res_masks,
             obj_ptr,
+            pred_logits,
+            aux_outputs,
         ) = sam_outputs
 
-        current_out["multistep_pred_masks"] = low_res_masks
-        current_out["multistep_pred_masks_high_res"] = high_res_masks
+        # We can leave these too since they are the same as pred masks, for sam2 correction points make the
+        # difference and we don't have them here
+        # current_out["multistep_pred_masks"] = low_res_masks
+        # current_out["multistep_pred_masks_high_res"] = high_res_masks
         # current_out["multistep_pred_multimasks"] = [low_res_multimasks]
         # current_out["multistep_pred_multimasks_high_res"] = [high_res_multimasks]
         # current_out["multistep_pred_ious"] = [ious]
@@ -357,6 +369,8 @@ class SAM2FormerTrain(SAM2FormerBase):
         current_out["pred_masks"] = low_res_masks
         current_out["pred_masks_high_res"] = high_res_masks
         current_out["obj_ptr"] = obj_ptr
+        current_out["pred_logits"] = pred_logits
+        current_out["aux_outputs"] = aux_outputs
 
         # Finally run the memory encoder on the predicted mask to encode
         # it into a new memory feature (that can be used in future frames)

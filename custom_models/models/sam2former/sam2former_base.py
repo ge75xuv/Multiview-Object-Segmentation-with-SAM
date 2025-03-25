@@ -298,9 +298,8 @@ class SAM2FormerBase(torch.nn.Module):
         predictions = self.sam_mask_decoder(in_feature_dict)
         # predictions: pred_logits, pred_masks, aux_outputs
         # pred_logits: [B, num_Q, num_classes], pred_masks: [B, num_Q, H//4, W//4]
-        
-        # NOTE pred logits is not what we are looking for. We need the output queries
-        output = predictions['transformer_outputs']
+
+        output = predictions.pop('transformer_outputs')
         obj_ptr = self.obj_ptr_proj(output)
         
         # if self.pred_obj_scores:
@@ -346,6 +345,8 @@ class SAM2FormerBase(torch.nn.Module):
             low_res_masks,
             high_res_masks,
             obj_ptr,
+            predictions['pred_logits'],
+            predictions['aux_outputs'],
         )
 
     def _use_mask_as_output(self, backbone_features, high_res_features, mask_inputs):

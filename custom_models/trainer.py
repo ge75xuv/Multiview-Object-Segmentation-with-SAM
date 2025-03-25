@@ -228,12 +228,12 @@ class Trainer:
         # NOTE HEADS UP
         # We want to reset for the initial run. If we already started training then
         # we should keep our weights
-        if self.epoch == 0:
+        if self.epoch == 0 and self.model_conf['_target_'].split('.')[-1] == 'SAM2Tune':
             print('Resetting the weights of prompt encoder and mask decoder transformer!')
-            for p in self.model.sam_prompt_encoder.parameters():
-                nn.init.trunc_normal_(p, std=0.02)
-            for p in self.model.sam_mask_decoder.transformer.parameters():
-                nn.init.trunc_normal_(p, std=0.02)
+            # for p in self.model.sam_prompt_encoder.parameters():
+            #     nn.init.trunc_normal_(p, std=0.02)
+            # for p in self.model.sam_mask_decoder.transformer.parameters():
+            #     nn.init.trunc_normal_(p, std=0.02)
         self._setup_ddp_distributed_training(distributed, accelerator)
         barrier()
 

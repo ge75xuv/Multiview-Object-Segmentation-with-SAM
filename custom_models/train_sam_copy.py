@@ -250,7 +250,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "-c",
         "--config",
-        default='sam2.1_hiera_b+_promptless.yaml',
+        # default='sam2.1_hiera_b+_promptless.yaml',
+        default='sam2former_hiera_b+_promptless.yaml',
         type=str,
         help="path to config file (e.g. configs/sam2.1_training/sam2.1_hiera_b+_promptless.yaml)",
     )

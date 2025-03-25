@@ -350,18 +350,25 @@ trainer:
 
   loss:
     all:
-      _target_: training.loss_fns.MultiStepMultiMasksAndIous
+      _target_: custom_models.models.sam2former.criterion.SetCriterion
+      num_classes: ${scratch.num_classes}
+      matcher:
+        _target_: custom_models.models.sam2former.matcher.HungarianMatcher
+        cost_class: ${trainer.loss.all.weight_dict.loss_class}
+        cost_mask: ${trainer.loss.all.weight_dict.loss_mask}
+        cost_dice: ${trainer.loss.all.weight_dict.loss_dice}
+        num_points: ${trainer.loss.all.num_points}
       weight_dict:
-        loss_mask: 20
-        loss_dice: 1
-        loss_iou: 1
-        loss_class: 1
-      supervise_all_iou: true
-      iou_use_l1_loss: true
-      pred_obj_scores: true
-      focal_gamma_obj_score: 0.0
-      focal_alpha_obj_score: -1.0
-
+        loss_mask: 5.0
+        loss_dice: 5.0
+        # loss_iou: 1
+        loss_class: 2.0
+      eos_coef: 0.1
+      losses: ['labels', 'masks']
+      num_points: 12544
+      oversample_ratio: 3.0
+      importance_sample_ratio: 0.75
+  
   distributed:
     backend: nccl
     find_unused_parameters: True
@@ -383,11 +390,10 @@ trainer:
     save_freq: 10 # 0 only last checkpoint is saved.
     model_weight_initializer:
       _partial_: True
-      _target_: training.utils.checkpoint_utils.load_state_dict_into_model
+      _target_: custom_models.models.sam2former.lib.load_state_dict_into_model
       strict: True
       ignore_unexpected_keys: null
       ignore_missing_keys: null
-
       state_dict:
         _target_: training.utils.checkpoint_utils.load_checkpoint_and_apply_kernels
         checkpoint_path: /home/guests/tuna_gurbuz/prototype/models/sam2/checkpoints/sam2.1_hiera_base_plus.pt # PATH to SAM 2.1 checkpoint
