@@ -230,10 +230,10 @@ class Trainer:
         # we should keep our weights
         if self.epoch == 0 and self.model_conf['_target_'].split('.')[-1] == 'SAM2Tune':
             print('Resetting the weights of prompt encoder and mask decoder transformer!')
-            # for p in self.model.sam_prompt_encoder.parameters():
-            #     nn.init.trunc_normal_(p, std=0.02)
-            # for p in self.model.sam_mask_decoder.transformer.parameters():
-            #     nn.init.trunc_normal_(p, std=0.02)
+            for p in self.model.sam_prompt_encoder.parameters():
+                nn.init.trunc_normal_(p, std=0.02)
+            for p in self.model.sam_mask_decoder.transformer.parameters():
+                nn.init.trunc_normal_(p, std=0.02)
         self._setup_ddp_distributed_training(distributed, accelerator)
         barrier()
 
@@ -464,10 +464,21 @@ class Trainer:
     ):
 
         outputs = model(batch)
-        targets = batch.masks
+        targets = []
         batch_size = len(batch.img_batch)
-
         key = batch.dict_key  # key for dataset
+
+        # HEADS UP: Reshape the target for the loss
+        for i in range(batch_size):
+            # dim=2 video_id, obj_id, frame_id
+            xx, yy = torch.where(batch.metadata.unique_objects_identifier[:,:,2] == i)
+            obj_id = batch.metadata.unique_objects_identifier[xx,yy,1]
+            targets.append({
+                "masks": batch.masks[i],
+                "labels": obj_id,
+            })
+
+        # Calculate the loss
         loss = self.loss[key](outputs, targets)
         loss_str = f"Losses/{phase}_{key}_loss"
 

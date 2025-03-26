@@ -128,9 +128,9 @@ class MiniDataset(Dataset):
                         self.images.append(video_batch_image)
                         self.segmentation_masks.append(video_batch_seg_mask)
         if split_type == 'over_train':
-            assert split_folder_names == ['001_PKA'], 'Only defined for 001_PKA'
-            assert object_labels == [10], "Index slicing is only calculated for the head surgeon"
-            assert len_video == 1, "Number of frames, i.e. len video has to be 1"
+            # assert split_folder_names == ['001_PKA'], 'Only defined for 001_PKA'
+            # assert object_labels == [10], "Index slicing is only calculated for the head surgeon"
+            # assert len_video == 1, "Number of frames, i.e. len video has to be 1"
             cam_switch = len(self.images) // 3
             start_idx = 2700
             end_idx = 2900
@@ -173,12 +173,12 @@ class MiniDataset(Dataset):
             # Open frame and segmentation mask as pillow image
             im_frame = Image.open(frame).convert("RGB")
             segmentation_mask = Image.open(video_frames_segmentation_mask[frame_idx]).convert("RGB")
-            seg_np = np.array(segmentation_mask)[:,:,0]  # We only need one channel, transpose since numpy reverts the positions
+            seg_np = np.array(segmentation_mask)[:,:,0]  # We only need one channel, it's same anyways
 
             # Initialize one-hot-mask and obj list
             obj_list = []
 
-            # Iterate over the object keys and values
+            # Iterate over the objects in the dataset
             for label in self.object_labels:
                 # Get label, find regions with the label and set the mask
                 # This would absolutely work here

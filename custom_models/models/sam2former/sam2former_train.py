@@ -224,8 +224,9 @@ class SAM2FormerTrain(SAM2FormerBase):
         }
         for stage_id in processing_order:
             # Get the image features for the current frames
-            # img_ids = input.find_inputs[stage_id].img_ids
+            # HEADS UP, we need the index of the frame but we dont want to repeat it O (object number) many times for the batch size
             img_ids = input.flat_obj_to_img_idx[stage_id]
+            img_ids = img_ids[0:1]
             if img_feats_already_computed:
                 # Retrieve image features according to img_ids (if they are already computed).
                 current_vision_feats = [x[:, img_ids] for x in vision_feats]

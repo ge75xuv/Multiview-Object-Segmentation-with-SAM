@@ -128,9 +128,8 @@ class SetCriterion(nn.Module):
             src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device
         )
         target_classes[idx] = target_classes_o
-
         loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
-        losses = {"loss_ce": loss_ce}
+        losses = {"loss_class": loss_ce}
         return losses
     
     def loss_masks(self, outputs, targets, indices, num_masks):
@@ -214,10 +213,12 @@ class SetCriterion(nn.Module):
         """
         # TODO, for now we only consider an image, it needs to be updae for num frames > 1
         outputs = outputs[0]
-        
+        self.empty_weight = self.empty_weight.to(outputs["pred_logits"].device)
         outputs_without_aux = {k: v for k, v in outputs.items() if k != "aux_outputs"}
 
         # Retrieve the matching between the outputs of the last layer and the targets
+        # indices are batch sized lists, where the first tensor is the indices of the outputs,
+        # and the second tensor is the indices of the targets
         indices = self.matcher(outputs_without_aux, targets)
 
         # Compute the average number of target boxes accross all nodes, for normalization purposes
@@ -233,6 +234,8 @@ class SetCriterion(nn.Module):
         losses = {}
         for loss in self.losses:
             losses.update(self.get_loss(loss, outputs, targets, indices, num_masks))
+        losses = self._calc_total_loss(losses)
+        i = 0  # number of deep supervision layers
 
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
         if "aux_outputs" in outputs:
@@ -242,9 +245,41 @@ class SetCriterion(nn.Module):
                     l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_masks)
                     l_dict = {k + f"_{i}": v for k, v in l_dict.items()}
                     losses.update(l_dict)
+                losses = self._calc_total_loss(losses, i)
 
-        return losses
+        return self._calc_core_loss(losses, i+1)
 
+    def _calc_total_loss(self, loss_dict, *args):
+        '''Calculate total loss from loss_dict with the given weight_dict. Index is passed as args 
+        to plausible match the corresponding losses
+        '''
+        idx = '' if len(args) == 0 else f"_{args[0]}"
+        total_loss = 0
+        for k, v in self.weight_dict.items():
+            total_loss += v * loss_dict[f'{k}{idx}']
+        loss_dict[f'total_loss{idx}'] = total_loss
+        return loss_dict
+    
+    def _calc_core_loss(self, loss_dict, num_deep_supervision=1):
+        '''Sum up the total losses and normalize them to calculate the core loss. Also, get rid of
+        byproduct losses except decoder last layer losses.
+        '''
+        core_loss = 0
+        keys_to_pop = []
+        for k, v in loss_dict.items():
+            # Sum total losses
+            if k.startswith('total_loss'):
+                core_loss += v
+            # Get rid of byproduct losses except decoder last layer losses
+            elif k in self.weight_dict.keys():
+                continue
+            else:
+                keys_to_pop.append(k)
+        loss_dict['core_loss'] = core_loss / num_deep_supervision
+        for k in keys_to_pop:
+            loss_dict.pop(k)
+        return loss_dict
+    
     def __repr__(self):
         head = "Criterion " + self.__class__.__name__
         body = [
