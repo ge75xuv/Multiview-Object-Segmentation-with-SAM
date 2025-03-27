@@ -6,12 +6,12 @@ scratch:
   num_train_workers: 2
   base_lr: 5.0e-6
   vision_lr: 3.0e-06
-  obj_labels: [10, 11]  # [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 24]
+  obj_labels: [10]  # [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 24]
   num_frames: 1
-  max_epochs: 400
+  max_epochs: 5000
   # Decoder
-  num_queries: 23
-  num_classes: 23
+  num_queries: 1
+  num_classes: 1
   mask_dim: 256
   name: ["res3", "res4", "res5"]
   channels: [256, 256, 256]
@@ -387,7 +387,7 @@ trainer:
     # NOTE: HEADS UP 
     # resume_from: sam2_logs/03_15_13_39/checkpoints/checkpoint.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
-    save_freq: 10 # 0 only last checkpoint is saved.
+    save_freq: 20 # 0 only last checkpoint is saved.
     model_weight_initializer:
       _partial_: True
       _target_: custom_models.models.sam2former.lib.load_state_dict_into_model

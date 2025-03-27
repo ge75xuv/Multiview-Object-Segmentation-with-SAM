@@ -128,9 +128,9 @@ class MiniDataset(Dataset):
                         self.images.append(video_batch_image)
                         self.segmentation_masks.append(video_batch_seg_mask)
         if split_type == 'over_train':
-            # assert split_folder_names == ['001_PKA'], 'Only defined for 001_PKA'
-            # assert object_labels == [10], "Index slicing is only calculated for the head surgeon"
-            # assert len_video == 1, "Number of frames, i.e. len video has to be 1"
+            assert split_folder_names == ['001_PKA'], 'Only defined for 001_PKA'
+            assert object_labels == [10], "Index slicing is only calculated for the head surgeon"
+            assert len_video == 1, "Number of frames, i.e. len video has to be 1"
             cam_switch = len(self.images) // 3
             start_idx = 2700
             end_idx = 2900
@@ -138,7 +138,7 @@ class MiniDataset(Dataset):
             idx_range_cam1 = [i for i in range(start_idx, end_idx)]
             idx_range_cam4 = [ii for ii in range(start_idx + cam_switch, end_idx + cam_switch)]
             idx_range = idx_range_free + idx_range_cam1 + idx_range_cam4
-            # idx_range = [end_idx + cam_switch]
+            idx_range = [end_idx + cam_switch]
             self.images = [self.images[i] for i in idx_range]
             self.segmentation_masks = [self.segmentation_masks[i] for i in idx_range]
 
@@ -188,6 +188,8 @@ class MiniDataset(Dataset):
                 mask1 = self._add_padding(mask1, self.input_image_size).squeeze(0)
 
                 # Occupy obj_list with the objects in the scene.
+                # Temporary solution, 
+                label = 0
                 obj_list.append(Object(label, frame_idx, mask1))
 
             # Occupy the frames
