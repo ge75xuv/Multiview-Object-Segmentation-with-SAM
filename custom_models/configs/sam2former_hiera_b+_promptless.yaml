@@ -365,9 +365,11 @@ trainer:
         loss_class: 2.0
       eos_coef: 0.1
       losses: ['labels', 'masks']
-      num_points: 12544
+      num_points: 65536  # 12544
       oversample_ratio: 3.0
       importance_sample_ratio: 0.75
+      deep_supervision: False
+      pointwise_mask: False
   
   distributed:
     backend: nccl

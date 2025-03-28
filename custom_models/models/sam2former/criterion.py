@@ -8,6 +8,7 @@ import logging
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torchvision.transforms import Resize
 
 from .lib import get_world_size, point_sample, get_uncertain_point_coords_with_randomness
 
@@ -91,7 +92,7 @@ class SetCriterion(nn.Module):
     """
 
     def __init__(self, num_classes, matcher, weight_dict, eos_coef, losses,
-                 num_points, oversample_ratio, importance_sample_ratio):
+                 num_points, oversample_ratio, importance_sample_ratio, deep_supervision=True, pointwise_mask=True):
         """Create the criterion.
         Parameters:
             num_classes: number of object categories, omitting the special no-object category
@@ -114,6 +115,12 @@ class SetCriterion(nn.Module):
         self.num_points = num_points
         self.oversample_ratio = oversample_ratio
         self.importance_sample_ratio = importance_sample_ratio
+
+        # extra
+        self.deep_supervision = deep_supervision
+        self.pointwise_mask = pointwise_mask
+        if not pointwise_mask:
+            self.resize_target_ = Resize((128, 128))
 
     def loss_labels(self, outputs, targets, indices, num_masks):
         """Classification loss (NLL)
@@ -152,6 +159,18 @@ class SetCriterion(nn.Module):
         # N x 1 x H x W
         src_masks = src_masks[:, None]
         target_masks = target_masks[:, None]
+
+        if not self.pointwise_mask:
+            target_masks_down = self.resize_target_(target_masks).flatten(1)
+            src_masks = src_masks.flatten(1)
+            losses = {
+            "loss_mask": sigmoid_ce_loss_jit(src_masks, target_masks_down, num_masks),
+            "loss_dice": dice_loss_jit(src_masks, target_masks_down, num_masks),
+        }
+            del src_masks
+            del target_masks
+            del target_masks_down
+            return losses
 
         with torch.no_grad():
             # sample point_coords
@@ -238,7 +257,7 @@ class SetCriterion(nn.Module):
         i = 0  # number of deep supervision layers
 
         # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
-        if "aux_outputs" in outputs:
+        if "aux_outputs" in outputs and self.deep_supervision:
             for i, aux_outputs in enumerate(outputs["aux_outputs"]):
                 indices = self.matcher(aux_outputs, targets)
                 for loss in self.losses:

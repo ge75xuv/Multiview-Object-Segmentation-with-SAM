@@ -101,7 +101,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         self.rng = np.random.default_rng(seed=42)
 
         if freeze_image_encoder:
-            for p in self.image_encoder.parameters():
+            for p in self.image_encoder.trunk.parameters():
                 p.requires_grad = False
 
     def forward(self, input: BatchedVideoDatapoint):

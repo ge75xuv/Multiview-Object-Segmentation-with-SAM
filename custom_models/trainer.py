@@ -1013,9 +1013,6 @@ class Trainer:
         self.logger = Logger(self.logging_conf)
 
         self.model = instantiate(self.model_conf, _convert_="all")
-        # NOTE HEADS UP I added this section
-        for p in self.model.image_encoder.parameters():
-            p.requires_grad = False
         print_model_summary(self.model)
 
         self.loss = None

@@ -104,7 +104,10 @@ def build_sam2former(
     # Read config and init model
     cfg = compose(config_name=config_file, overrides=hydra_overrides_extra)
     # Register new operation becaise of learning rate
-    OmegaConf.register_new_resolver("divide", lambda x, y: x / y)
+    try:
+        OmegaConf.register_new_resolver("divide", lambda x, y: x / y)
+    except ValueError:
+        print('Operation divide already registered')
     # Resolve
     OmegaConf.resolve(cfg)
     print(f'OmegaConf resolved successfully')
