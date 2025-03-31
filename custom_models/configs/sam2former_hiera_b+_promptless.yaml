@@ -3,15 +3,15 @@
 scratch:
   resolution: 512
   train_batch_size: 1
-  num_train_workers: 2
-  base_lr: 5.0e-6
-  vision_lr: 3.0e-06
-  obj_labels: [10]  # [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 24]
+  num_train_workers: 1
+  base_lr: 1.0e-4  # 5.0e-6
+  vision_lr: 3.0e-5  # 3.0e-06
+  obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]  # [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 24]
   num_frames: 1
-  max_epochs: 5000
+  max_epochs: 10000
   # Decoder
-  num_queries: 1
-  num_classes: 1
+  num_queries: 10
+  num_classes: 10
   mask_dim: 256
   name: ["res3", "res4", "res5"]
   channels: [256, 256, 256]
@@ -58,8 +58,8 @@ vos:
         #   hue: null
         # - _target_: training.dataset.transforms.ToTensorAPI
         - _target_: training.dataset.transforms.NormalizeAPI
-          mean: [0.485, 0.456, 0.406]
-          std: [0.229, 0.224, 0.225]
+          mean: [0.3551, 0.3500, 0.3469]
+          std: [0.2921, 0.2716, 0.2742]
 
 trainer:
   _target_: custom_models.trainer.Trainer
@@ -250,7 +250,7 @@ trainer:
       input_image_size: ${scratch.resolution}
       object_labels: ${scratch.obj_labels}
       transforms: ${vos.train_transforms}
-      shuffle: True
+      num_workers: ${scratch.num_train_workers}
       collate_fn:
         _target_: training.utils.data_utils.collate_fn
         _partial_: true
@@ -258,50 +258,16 @@ trainer:
     # val:
     #   _target_: custom_models.dataset.mini_dataset.MiniDataset
     #   batch_size: ${scratch.train_batch_size}
-    #   split_type: 'val'
+    #   split_type: 'over_train'
     #   len_video: ${scratch.num_frames}
     #   input_image_size: ${scratch.resolution}
     #   object_labels: ${scratch.obj_labels}
     #   transforms: ${vos.train_transforms}
-    #   shuffle: False
+    #   num_workers: ${scratch.num_train_workers}
     #   collate_fn:
     #     _target_: training.utils.data_utils.collate_fn
     #     _partial_: true
-    #     dict_key: all
-
-  # data:
-  #   train:
-  #     _target_: training.dataset.sam2_datasets.TorchTrainMixedDataset
-  #     phases_per_epoch: ${scratch.phases_per_epoch}
-  #     batch_sizes:
-  #       - ${scratch.train_batch_size}
-
-  #     datasets:
-  #       - _target_: training.dataset.utils.RepeatFactorWrapper
-  #         dataset:
-  #           _target_: training.dataset.utils.ConcatDataset
-  #           datasets:
-  #           - _target_: training.dataset.vos_dataset.VOSDataset
-  #             transforms: ${vos.train_transforms}
-  #             training: true
-  #             video_dataset:
-  #               _target_: training.dataset.vos_raw_dataset.PNGRawDataset
-  #               img_folder: ${dataset.img_folder}
-  #               gt_folder: ${dataset.gt_folder}
-  #               file_list_txt: ${dataset.file_list_txt}
-  #             sampler:
-  #               _target_: training.dataset.vos_sampler.RandomUniformSampler
-  #               num_frames: ${scratch.num_frames}
-  #               max_num_objects: ${scratch.max_num_objects}
-  #             multiplier: ${dataset.multiplier}
-  #     shuffle: True
-  #     num_workers: ${scratch.num_train_workers}
-  #     pin_memory: True
-  #     drop_last: True
-  #     collate_fn:
-  #       _target_: training.utils.data_utils.collate_fn
-  #       _partial_: true
-  #       dict_key: all
+    #     dict_key: val
 
   optim:
     amp:
@@ -313,34 +279,34 @@ trainer:
 
     gradient_clip:
       _target_: training.optimizer.GradientClipper
-      max_norm: 0.1
+      max_norm: 0.1  # 0.01  # 0.1
       norm_type: 2
 
-    param_group_modifiers:
-      - _target_: training.optimizer.layer_decay_param_modifier
-        _partial_: True
-        layer_decay_value: 0.9
-        apply_to: 'image_encoder.trunk'
-        overrides:
-          - pattern: '*pos_embed*'
-            value: 1.0
+    # param_group_modifiers:
+    #   - _target_: training.optimizer.layer_decay_param_modifier
+    #     _partial_: True
+    #     layer_decay_value: 0.9
+    #     apply_to: 'image_encoder.trunk'
+    #     overrides:
+    #       - pattern: '*pos_embed*'
+    #         value: 1.0
 
     options:
       lr:
         - scheduler:
             _target_: fvcore.common.param_scheduler.CosineParamScheduler
             start_value: ${scratch.base_lr}
-            end_value: ${divide:${scratch.base_lr},10}
+            end_value: ${divide:${scratch.base_lr},1}
         - scheduler:
             _target_: fvcore.common.param_scheduler.CosineParamScheduler
             start_value: ${scratch.vision_lr}
-            end_value: ${divide:${scratch.vision_lr},10}
+            end_value: ${divide:${scratch.vision_lr},1}
           param_names:
             - 'image_encoder.*'
       weight_decay:
         - scheduler:
             _target_: fvcore.common.param_scheduler.ConstantParamScheduler
-            value: 0.1
+            value: 0.1  # 0.05 # 0.1
         - scheduler:
             _target_: fvcore.common.param_scheduler.ConstantParamScheduler
             value: 0.0
@@ -370,6 +336,27 @@ trainer:
       importance_sample_ratio: 0.75
       deep_supervision: False
       pointwise_mask: False
+    # val:
+    #   _target_: custom_models.models.sam2former.criterion.SetCriterion
+    #   num_classes: ${scratch.num_classes}
+    #   matcher:
+    #     _target_: custom_models.models.sam2former.matcher.HungarianMatcher
+    #     cost_class: ${trainer.loss.all.weight_dict.loss_class}
+    #     cost_mask: ${trainer.loss.all.weight_dict.loss_mask}
+    #     cost_dice: ${trainer.loss.all.weight_dict.loss_dice}
+    #     num_points: ${trainer.loss.all.num_points}
+    #   weight_dict:
+    #     loss_mask: 5.0
+    #     loss_dice: 5.0
+    #     # loss_iou: 1
+    #     loss_class: 2.0
+    #   eos_coef: 0.1
+    #   losses: ['labels', 'masks']
+    #   num_points: 65536  # 12544
+    #   oversample_ratio: 3.0
+    #   importance_sample_ratio: 0.75
+    #   deep_supervision: False
+    #   pointwise_mask: False
   
   distributed:
     backend: nccl
@@ -387,9 +374,9 @@ trainer:
   # initialize from a SAM 2 checkpoint
   checkpoint:
     # NOTE: HEADS UP 
-    # resume_from: sam2_logs/03_15_13_39/checkpoints/checkpoint.pt
+    # resume_from: sam2_logs/03_29_18_56/checkpoints/checkpoint.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
-    save_freq: 20 # 0 only last checkpoint is saved.
+    save_freq: 200 # 0 only last checkpoint is saved.
     model_weight_initializer:
       _partial_: True
       _target_: custom_models.models.sam2former.lib.load_state_dict_into_model
@@ -403,7 +390,7 @@ trainer:
 
 launcher:
   num_nodes: 1
-  gpus_per_node: 8
+  gpus_per_node: 1
   experiment_log_dir: null # Path to log directory, defaults to ./sam2_logs/${config_name}
 
 # SLURM args if running on a cluster

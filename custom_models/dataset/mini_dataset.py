@@ -1,6 +1,6 @@
 import json
+from multiprocessing import Manager
 import os
-import re
 from typing import List
 
 import numpy as np
@@ -11,7 +11,6 @@ from torchvision.transforms import ToTensor, Resize
 from training.utils.data_utils import Object, Frame, VideoDatapoint
 from tqdm import tqdm
 
-# from helpers.configurations import *
 from custom_models.helpers.configurations import *
 
 class MiniDataset(Dataset):
@@ -24,7 +23,7 @@ class MiniDataset(Dataset):
                  transforms,
                  collate_fn,
                  batch_size:int=1,
-                 shuffle:bool=1,
+                 num_workers:int=0,
                  **kwargs):
         '''Initialzie the class open the data folders and store them.
         TODO Data Augmentatation DONE
@@ -40,7 +39,7 @@ class MiniDataset(Dataset):
         # Arguments
         self.len_video = len_video
         self.batch_size = batch_size
-        self.shuffle = shuffle
+        self.num_workers= num_workers
         self.collate_fn=collate_fn
         self.input_image_size = input_image_size
         self.transforms_ = transforms
@@ -128,9 +127,6 @@ class MiniDataset(Dataset):
                         self.images.append(video_batch_image)
                         self.segmentation_masks.append(video_batch_seg_mask)
         if split_type == 'over_train':
-            assert split_folder_names == ['001_PKA'], 'Only defined for 001_PKA'
-            assert object_labels == [10], "Index slicing is only calculated for the head surgeon"
-            assert len_video == 1, "Number of frames, i.e. len video has to be 1"
             cam_switch = len(self.images) // 3
             start_idx = 2700
             end_idx = 2900
@@ -138,9 +134,19 @@ class MiniDataset(Dataset):
             idx_range_cam1 = [i for i in range(start_idx, end_idx)]
             idx_range_cam4 = [ii for ii in range(start_idx + cam_switch, end_idx + cam_switch)]
             idx_range = idx_range_free + idx_range_cam1 + idx_range_cam4
-            idx_range = [end_idx + cam_switch]
             self.images = [self.images[i] for i in idx_range]
             self.segmentation_masks = [self.segmentation_masks[i] for i in idx_range]
+
+        # Python multiprocessing manager
+        # This is a workaround for the multiprocessing issue with PyTorch
+        manager = Manager()
+        self.images = manager.list(self.images)
+        self.segmentation_masks = manager.list(self.segmentation_masks)
+        #TODO Another solution is to use np.array(self.images) however if len_video > 1 and there is an uncomplete video
+        # left, then thre will be inhomogeneous shapes in the array. So we may need to dump it.
+        # Convert the list into a numpy array
+        # self.images = np.array(self.images)
+        # self.segmentation_masks = np.array(self.segmentation_masks)
 
     def __len__(self):
         return len(self.segmentation_masks)
@@ -189,8 +195,8 @@ class MiniDataset(Dataset):
 
                 # Occupy obj_list with the objects in the scene.
                 # Temporary solution, 
-                label = 0
-                obj_list.append(Object(label, frame_idx, mask1))
+                pseudo_label = LABEL_PROJECTION_MAP[int(label)]['label']
+                obj_list.append(Object(pseudo_label, frame_idx, mask1))
 
             # Occupy the frames
             im_frame = self.resize_image(self.to_tensor(im_frame))
@@ -206,7 +212,7 @@ class MiniDataset(Dataset):
         return out_image
 
     def get_loader(self, **kwargs):
-        return DataLoader(self, batch_size=self.batch_size, shuffle=self.shuffle, collate_fn=self.collate_fn)
+        return DataLoader(self, batch_size=self.batch_size, shuffle=False, collate_fn=self.collate_fn, num_workers=self.num_workers)
 
     def load_checkpoint_state(*args, **kwargs):
         pass

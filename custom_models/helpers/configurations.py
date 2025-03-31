@@ -170,3 +170,16 @@ TRACK_TO_METAINFO = {
     'cementer': {'color': (153, 76, 0), 'label': 29},
     '__background__': {'color': (0, 0, 0), 'label': 0}
 }
+
+LABEL_PROJECTION_MAP = {
+    1: {'color': (76, 161, 245), 'label': 0},
+    2: {'color': (255, 51, 153), 'label': 1},
+    3: {'color': (0, 0, 255), 'label': 2},
+    4: {'color': (255, 255, 0), 'label': 3},
+    5: {'color': (133, 0, 133), 'label': 4},
+    6: {'color': (255, 0, 0), 'label': 5},
+    7: {'color': (183, 91, 255), 'label': 6},
+    8: {'color': (177, 255, 110), 'label': 7},
+    9: {'color': (255, 128, 0), 'label': 8},
+    10: {'color': (116, 166, 116), 'label': 9},
+}

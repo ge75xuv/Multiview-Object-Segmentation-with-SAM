@@ -162,7 +162,7 @@ def main(args) -> None:
     submitit_conf.use_cluster = (
         args.use_cluster if args.use_cluster is not None else submitit_conf.use_cluster
     )
-    if submitit_conf.use_cluster:
+    if submitit_conf.use_cluster and False:
         executor = submitit.AutoExecutor(folder=submitit_dir)
         submitit_conf.partition = (
             args.partition

@@ -301,11 +301,20 @@ class Trainer:
 
         assert isinstance(self.model, torch.nn.Module)
 
-        self.model = nn.parallel.DistributedDataParallel(
-            self.model,
-            device_ids=[self.local_rank] if accelerator == "cuda" else [],
-            find_unused_parameters=distributed_conf.find_unused_parameters,
-        )
+        try:
+            self.model = nn.parallel.DistributedDataParallel(
+                self.model,
+                device_ids=[self.local_rank] if accelerator == "cuda" else [],
+                find_unused_parameters=distributed_conf.find_unused_parameters,
+            )
+        except:
+            size = '20G'
+            os.system(f"mount -o remount,size={size} /dev/shm")
+            self.model = nn.parallel.DistributedDataParallel(
+                self.model,
+                device_ids=[self.local_rank] if accelerator == "cuda" else [],
+                find_unused_parameters=distributed_conf.find_unused_parameters,
+            )
         if distributed_conf.comms_dtype is not None:  # noqa
             from torch.distributed.algorithms import ddp_comm_hooks
 
@@ -810,6 +819,9 @@ class Trainer:
                 # applied if the gradients are infinite
                 self.scaler.step(self.optim.optimizer)
                 self.scaler.update()
+
+                # HEADS UP
+                torch.cuda.empty_cache()
 
                 # measure elapsed time
                 batch_time_meter.update(time.time() - end)
