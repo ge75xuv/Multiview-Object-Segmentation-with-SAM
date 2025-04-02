@@ -26,14 +26,12 @@ class MiniDataset(Dataset):
                  num_workers:int=0,
                  **kwargs):
         '''Initialzie the class open the data folders and store them.
-        TODO Data Augmentatation DONE
-        TODO Video Batches: DONE
-                Let's store images in self.images as [[fr0, fr1, fr2, frK-1], [fr0+K, fr1+K, fr2+K, frK+k-1], ...]
-                so a list of small videos. Thus during __getitem__ I can load those images and return them as BatchedVideoDatapoint
-                img_batch: A [TxBxCxHxW]
-                masks: A [TxOxHxW] <-- This is going to be weird I would say.
-                T: frames per video
-                B: videos in the batch
+            Store images in self.images as [[fr0, fr1, fr2, frK-1], [fr0+K, fr1+K, fr2+K, frK+k-1], ...]
+            so a list of small videos. Thus during __getitem__ I can load those images and return them as BatchedVideoDatapoint
+            img_batch: A [TxBxCxHxW]
+            masks: A [TxOxHxW] <-- This is going to be weird I would say.
+            T: frames per video
+            B: videos in the batch
         '''
         super().__init__()
         # Arguments

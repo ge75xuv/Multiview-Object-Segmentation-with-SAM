@@ -6,12 +6,12 @@ scratch:
   num_train_workers: 1
   base_lr: 1.0e-4  # 5.0e-6
   vision_lr: 3.0e-5  # 3.0e-06
-  obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]  # [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 24]
+  obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29]
   num_frames: 1
-  max_epochs: 10000
+  max_epochs: 500
   # Decoder
-  num_queries: 10
-  num_classes: 10
+  num_queries: 24
+  num_classes: 24
   mask_dim: 256
   name: ["res3", "res4", "res5"]
   channels: [256, 256, 256]
@@ -64,7 +64,6 @@ vos:
 trainer:
   _target_: custom_models.trainer.Trainer
   mode: train  # [train]
-  # max_epochs: ${times:${scratch.num_epochs},${scratch.phases_per_epoch}}
   max_epochs: ${scratch.max_epochs}
   accelerator: cuda
   seed_value: 123
@@ -327,7 +326,6 @@ trainer:
       weight_dict:
         loss_mask: 5.0
         loss_dice: 5.0
-        # loss_iou: 1
         loss_class: 2.0
       eos_coef: 0.1
       losses: ['labels', 'masks']
@@ -376,7 +374,7 @@ trainer:
     # NOTE: HEADS UP 
     # resume_from: sam2_logs/03_29_18_56/checkpoints/checkpoint.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
-    save_freq: 200 # 0 only last checkpoint is saved.
+    save_freq: 10 # 0 only last checkpoint is saved.
     model_weight_initializer:
       _partial_: True
       _target_: custom_models.models.sam2former.lib.load_state_dict_into_model

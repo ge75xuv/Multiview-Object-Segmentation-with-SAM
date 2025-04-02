@@ -301,20 +301,11 @@ class Trainer:
 
         assert isinstance(self.model, torch.nn.Module)
 
-        try:
-            self.model = nn.parallel.DistributedDataParallel(
-                self.model,
-                device_ids=[self.local_rank] if accelerator == "cuda" else [],
-                find_unused_parameters=distributed_conf.find_unused_parameters,
-            )
-        except:
-            size = '20G'
-            os.system(f"mount -o remount,size={size} /dev/shm")
-            self.model = nn.parallel.DistributedDataParallel(
-                self.model,
-                device_ids=[self.local_rank] if accelerator == "cuda" else [],
-                find_unused_parameters=distributed_conf.find_unused_parameters,
-            )
+        self.model = nn.parallel.DistributedDataParallel(
+            self.model,
+            device_ids=[self.local_rank] if accelerator == "cuda" else [],
+            find_unused_parameters=distributed_conf.find_unused_parameters,
+        )
         if distributed_conf.comms_dtype is not None:  # noqa
             from torch.distributed.algorithms import ddp_comm_hooks
 
