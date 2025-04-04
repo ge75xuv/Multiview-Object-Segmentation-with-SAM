@@ -127,8 +127,10 @@ class MiniDataset(Dataset):
         if split_type == 'over_train':
             cam_switch = len(self.images) // 3
             start_idx = 2700
-            end_idx = 2900
-            idx_range_free = [i for i in range(1900, 2100)]
+            # end_idx = 2900
+            end_idx = 2730
+            # idx_range_free = [i for i in range(1900, 2100)]
+            idx_range_free = []
             idx_range_cam1 = [i for i in range(start_idx, end_idx)]
             idx_range_cam4 = [ii for ii in range(start_idx + cam_switch, end_idx + cam_switch)]
             idx_range = idx_range_free + idx_range_cam1 + idx_range_cam4

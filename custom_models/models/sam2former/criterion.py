@@ -223,7 +223,7 @@ class SetCriterion(nn.Module):
         assert loss in loss_map, f"do you really want to compute {loss} loss?"
         return loss_map[loss](outputs, targets, indices, num_masks)
 
-    def forward(self, outputs, targets):
+    def forward(self, all_outputs, targets):
         """This performs the loss computation.
         Parameters:
              outputs: dict of tensors, see the output specification of the model for the format
@@ -231,42 +231,53 @@ class SetCriterion(nn.Module):
                       The expected keys in each dict depends on the losses applied, see each loss' doc
         """
         # TODO, for now we only consider an image, it needs to be updae for num frames > 1
-        outputs = outputs[0]
-        self.empty_weight = self.empty_weight.to(outputs["pred_logits"].device)
-        outputs_without_aux = {k: v for k, v in outputs.items() if k != "aux_outputs"}
+        all_losses = []
+        num_frames = len(all_outputs.keys())
 
-        # Retrieve the matching between the outputs of the last layer and the targets
-        # indices are batch sized lists, where the first tensor is the indices of the outputs,
-        # and the second tensor is the indices of the targets
-        indices = self.matcher(outputs_without_aux, targets)
+        for frame_idx in range(num_frames):
+            outputs = all_outputs[frame_idx]
+            self.empty_weight = self.empty_weight.to(outputs["pred_logits"].device)
+            outputs_without_aux = {k: v for k, v in outputs.items() if k != "aux_outputs"}
 
-        # Compute the average number of target boxes accross all nodes, for normalization purposes
-        num_masks = sum(len(t["labels"]) for t in targets)
-        num_masks = torch.as_tensor(
-            [num_masks], dtype=torch.float, device=next(iter(outputs.values())).device
-        )
-        if is_dist_avail_and_initialized():
-            torch.distributed.all_reduce(num_masks)
-        num_masks = torch.clamp(num_masks / get_world_size(), min=1).item()
+            # Retrieve the matching between the outputs of the last layer and the targets
+            # indices are batch sized lists, where the first tensor is the indices of the outputs,
+            # and the second tensor is the indices of the targets
+            indices = self.matcher(outputs_without_aux, targets)
 
-        # Compute all the requested losses
-        losses = {}
-        for loss in self.losses:
-            losses.update(self.get_loss(loss, outputs, targets, indices, num_masks))
-        losses = self._calc_total_loss(losses)
-        i = 0  # number of deep supervision layers
+            # Compute the average number of target boxes accross all nodes, for normalization purposes
+            num_masks = sum(len(t["labels"]) for t in targets)
+            num_masks = torch.as_tensor(
+                [num_masks], dtype=torch.float, device=next(iter(outputs.values())).device
+            )
+            if is_dist_avail_and_initialized():
+                torch.distributed.all_reduce(num_masks)
+            num_masks = torch.clamp(num_masks / get_world_size(), min=1).item()
 
-        # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
-        if "aux_outputs" in outputs and self.deep_supervision:
-            for i, aux_outputs in enumerate(outputs["aux_outputs"]):
-                indices = self.matcher(aux_outputs, targets)
-                for loss in self.losses:
-                    l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_masks)
-                    l_dict = {k + f"_{i}": v for k, v in l_dict.items()}
-                    losses.update(l_dict)
-                losses = self._calc_total_loss(losses, i)
+            # Compute all the requested losses
+            losses = {}
+            for loss in self.losses:
+                losses.update(self.get_loss(loss, outputs, targets, indices, num_masks))
+            losses = self._calc_total_loss(losses)
+            i = 0  # number of deep supervision layers
 
-        return self._calc_core_loss(losses, i+1)
+            # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
+            if "aux_outputs" in outputs and self.deep_supervision:
+                for i, aux_outputs in enumerate(outputs["aux_outputs"]):
+                    indices = self.matcher(aux_outputs, targets)
+                    for loss in self.losses:
+                        l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_masks)
+                        l_dict = {k + f"_{i}": v for k, v in l_dict.items()}
+                        losses.update(l_dict)
+                    losses = self._calc_total_loss(losses, i)
+            all_losses.append(self._calc_core_loss(losses, i+1))
+
+        # Calculate loss from all frames
+        loss_dict = {
+            k: sum(all_losses[jj][k] for jj in range(num_frames))/num_frames  # Sum up the values of each dictionary in the list under individual keys
+            for k in all_losses[0].keys()  # Iterate over the keys, they are identical
+            }
+            
+        return loss_dict
 
     def _calc_total_loss(self, loss_dict, *args):
         '''Calculate total loss from loss_dict with the given weight_dict. Index is passed as args 

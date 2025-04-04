@@ -113,7 +113,8 @@ def build_sam2former(
     print(f'OmegaConf resolved successfully')
     # Instantiate model, loss, load weights, freeze backbone
     training_key = list(cfg.keys())[0]
-    model = instantiate(cfg[training_key][''].trainer.model, _recursive_=True)
+    # model = instantiate(cfg[training_key][''].trainer.model, _recursive_=True)
+    model = instantiate(cfg[training_key].trainer.model, _recursive_=True)
     # _load_checkpoint(model, ckpt_path)
     # _remove_parameters_of_backbone(model)
     # send model to device
@@ -122,8 +123,10 @@ def build_sam2former(
         model.eval()
     optim = lambda:0
     optim.optimizer = torch.optim.AdamW(model.parameters())
-    loss = instantiate(cfg[training_key][''].trainer.loss, _recursive_=True)
-    return model, cfg[training_key]['']['scratch']['obj_labels'], optim, loss
+    # loss = instantiate(cfg[training_key][''].trainer.loss, _recursive_=True)
+    loss = instantiate(cfg[training_key].trainer.loss, _recursive_=True)
+    # return model, cfg[training_key]['']['scratch']['obj_labels'], optim, loss
+    return model, cfg[training_key]['scratch']['obj_labels'], optim, loss
 
 def _load_checkpoint(model, ckpt_path, _load_partial:bool=False):
     if ckpt_path is not None:

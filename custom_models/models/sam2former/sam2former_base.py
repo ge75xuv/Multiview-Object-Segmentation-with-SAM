@@ -188,6 +188,13 @@ class SAM2FormerBase(torch.nn.Module):
         self._build_sam_heads()
         self.max_cond_frames_in_attn = max_cond_frames_in_attn
 
+        # HEADS UP
+        # Memory projection for multiobject
+        # num_queries = mask_decoder_cfg['transformer_predictor']['num_queries']
+        num_queries = self.sam_mask_decoder.predictor.num_queries
+        self.multi_object_memory_proj = torch.nn.Linear(num_queries,1)
+        self.multi_object_memory_pos_proj = torch.nn.Linear(num_queries,1)
+
         # Model compilation
         if compile_image_encoder:
             # Compile the forward function (not the full module) to allow loading checkpoints.
@@ -570,13 +577,17 @@ class SAM2FormerBase(torch.nn.Module):
                         )
                         obj_pos = get_1d_sine_pe(obj_pos / t_diff_max, dim=tpos_dim)
                         obj_pos = self.obj_ptr_tpos_proj(obj_pos)
-                        obj_pos = obj_pos.unsqueeze(1).expand(-1, B, self.mem_dim)
+                        # obj_pos = obj_pos.unsqueeze(1).expand(-1, B, self.mem_dim)
+                        # HEADS UP since we distinguish between the batch and object size
+                        O = obj_ptrs.shape[1]
+                        obj_pos = obj_pos.unsqueeze(1).expand(-1, O, self.mem_dim)
                     else:
                         obj_pos = obj_ptrs.new_zeros(len(pos_list), B, self.mem_dim)
                     if self.mem_dim < C:
                         # split a pointer into (C // self.mem_dim) tokens for self.mem_dim < C
+                        # HEADS UP Change
                         obj_ptrs = obj_ptrs.reshape(
-                            -1, B, C // self.mem_dim, self.mem_dim
+                            -1, O, C // self.mem_dim, self.mem_dim
                         )
                         obj_ptrs = obj_ptrs.permute(0, 2, 1, 3).flatten(0, 1)
                         obj_pos = obj_pos.repeat_interleave(C // self.mem_dim, dim=0)
@@ -600,6 +611,10 @@ class SAM2FormerBase(torch.nn.Module):
         # Step 2: Concatenate the memories and forward through the transformer encoder
         memory = torch.cat(to_cat_memory, dim=0)
         memory_pos_embed = torch.cat(to_cat_memory_pos_embed, dim=0)
+
+        # Step 3: Linear - Conv1D projection of object mask-memories
+        memory = self.multi_object_memory_proj(memory.mT).mT
+        memory_pos_embed = self.multi_object_memory_pos_proj(memory_pos_embed.mT).mT
 
         pix_feat_with_mem = self.memory_attention(
             curr=current_vision_feats,

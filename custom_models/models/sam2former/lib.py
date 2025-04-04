@@ -34,11 +34,15 @@ def load_state_dict_into_model(
             state_dict = f(state_dict=state_dict)
     missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
     # Ignore check_load_state_dict_errors
-    missing_keys = [k for k in missing_keys if not k.startswith("sam_mask_decoder")]
+    missing_keys = [k for k in missing_keys if not (k.startswith("sam_mask_decoder") or
+                                                  k.startswith("multi_object_memory"))
+                    ]
     unexpected_keys = [k for k in unexpected_keys 
                        if not (k.startswith("sam_mask_decoder") or 
                                k.startswith("sam_prompt_encoder") or 
-                               k.startswith("memory"))]
+                               k.startswith("memory"))
+                       ]
+                               
     assert len(missing_keys) == 0, f"Missing keys: {missing_keys}"
     assert len(unexpected_keys) == 0, f"Unexpected keys: {unexpected_keys}"
     return model

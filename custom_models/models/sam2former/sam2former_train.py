@@ -375,6 +375,8 @@ class SAM2FormerTrain(SAM2FormerBase):
 
         # Finally run the memory encoder on the predicted mask to encode
         # it into a new memory feature (that can be used in future frames)
+        # Since python subscriptibles are passed by reference, it updates the dictionary even though
+        # there is no return
         self._encode_memory_in_output(
             current_vision_feats,
             feat_sizes,

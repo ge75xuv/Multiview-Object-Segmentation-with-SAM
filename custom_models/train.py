@@ -1,6 +1,9 @@
 import time
 
+from hydra import compose
+from hydra.utils import instantiate
 import numpy as np
+from omegaconf import OmegaConf
 import torch
 from torch.amp import GradScaler
 from torch.utils.data import DataLoader
@@ -49,9 +52,8 @@ def train():
     # Hyperparameters
     epochs = 1
     batch_size = 1
-    lr = 5e-6
     shuffle = False
-    len_video = 1
+    len_video = 3
     model_size = 'sam2former'
     input_image_size = 512
     object_labels = [10]
@@ -60,8 +62,8 @@ def train():
     transforms = [ComposeAPI([NormalizeAPI(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], v2=True)])]
 
     # Dataset
-    train_dataset = MiniDataset('mini_train', len_video, input_image_size, object_labels, transforms, collate_fn, batch_size, shuffle, get_seg_mask=True)
-    valid_dataset = MiniDataset('mini_train', len_video, input_image_size, object_labels, transforms, collate_fn, batch_size, shuffle, get_seg_mask=True)
+    train_dataset = MiniDataset('over_train', len_video, input_image_size, object_labels, transforms, collate_fn, batch_size, shuffle, get_seg_mask=True)
+    valid_dataset = MiniDataset('over_train', len_video, input_image_size, object_labels, transforms, collate_fn, batch_size, shuffle, get_seg_mask=True)
 
     # Show the data to test
     debug = False
@@ -90,9 +92,22 @@ def train():
     print(f'Length of the dataloader: {iters_per_epoch}\n')
     config = model_size_dict[model_size]['config']
     ck = model_size_dict[model_size]['ck']
-    build_fcn = builder_type[model_size]
-    model, loss, optim = build_fcn(config, ck, mode='train', _load_partial=False, device=device)
-    print('Model building completed')
+    if model_size == 'sam2former':
+        cfg = compose(config_name=config)
+        OmegaConf.register_new_resolver("divide", lambda x, y: x / y)
+        OmegaConf.resolve(cfg)
+        print(f'OmegaConf resolved successfully')
+        model = instantiate(cfg.trainer.model, _recursive_=True)
+        print('Model building completed')
+        model = model.to(device)
+        optim = lambda:0
+        optim.optimizer = torch.optim.AdamW(model.parameters())
+        # loss = instantiate(cfg[training_key][''].trainer.loss, _recursive_=True)
+        loss = instantiate(cfg.trainer.loss, _recursive_=True)['all']
+    else:
+        # Build the model
+        build_fcn = builder_type[model_size]
+        model, loss, optim = build_fcn(config, ck, mode='train', _load_partial=False, device=device)
 
     scaler = GradScaler(device=device, enabled=True, )
     gradient_clipper = GradientClipper(max_norm=0.1, norm_type=2)
@@ -117,6 +132,16 @@ def train():
                 dtype=autocast_dtype,
             ):
                 all_frame_outputs = model(batched_video_data)
+                if model_size == 'sam2former':
+                    masks = []
+                    for i in range(len_video):
+                        # dim=2 video_id, obj_id, frame_id
+                        xx, yy = torch.where(data_t[0].metadata.unique_objects_identifier[:,:,2] == i)
+                        obj_id = data_t[0].metadata.unique_objects_identifier[xx,yy,1]
+                        masks.append({
+                            "masks": data_t[0].masks[i],
+                            "labels": obj_id,
+                        })
                 loss_dict = loss(all_frame_outputs, masks)
             # What is the difference between
             # multistep_pred_masks_high_res - multistep_pred_multimasks_high_res - pred_masks_high_res
