@@ -125,15 +125,22 @@ class MiniDataset(Dataset):
                         self.images.append(video_batch_image)
                         self.segmentation_masks.append(video_batch_seg_mask)
         if split_type == 'over_train':
-            cam_switch = len(self.images) // 3
-            start_idx = 2700
-            # end_idx = 2900
-            end_idx = 2730
+            cam_switch = len(self.images) // 3 // len_video
+            start_idx = 2700 // len_video
+            end_idx = 2900 // len_video
             # idx_range_free = [i for i in range(1900, 2100)]
             idx_range_free = []
             idx_range_cam1 = [i for i in range(start_idx, end_idx)]
             idx_range_cam4 = [ii for ii in range(start_idx + cam_switch, end_idx + cam_switch)]
             idx_range = idx_range_free + idx_range_cam1 + idx_range_cam4
+            self.images = [self.images[i] for i in idx_range]
+            self.segmentation_masks = [self.segmentation_masks[i] for i in idx_range]
+        elif split_type == 'over_train2' and False:
+            start_idx_13 = 4804
+            end_idx_13 = 4904
+            idx_range_cam1 = [i for i in range(start_idx_13, end_idx_13)]
+            idx_range_cam4 = [4441, 4442, 4443, 4444, 4445, 4448, 4449, 4452, 4453, 4454, 4455, 4474, 4475, 4476, 4477, 4478, 4484, 4716, 4717, 4718, 4722, 4732, 4733, 4738, 4739, 4740, 4741] 
+            idx_range = idx_range_cam1 + idx_range_cam4
             self.images = [self.images[i] for i in idx_range]
             self.segmentation_masks = [self.segmentation_masks[i] for i in idx_range]
 

@@ -86,6 +86,7 @@ MMOR_SPLIT_TO_TAKES = {
     "train": ['001_PKA', '003_TKA', '005_TKA', '006_PKA', '008_PKA', '010_PKA', '011_TKA', '035_PKA', '037_TKA'],  # deleted , '012_PKA'
     "small_train": ['001_PKA', '003_TKA', '035_PKA', '037_TKA', '005_TKA'],
     "over_train": ['001_PKA'],
+    "over_train2": ['001_PKA'],
     "mini_train": ['013_PKA'],  # just for debugging
     "val": ['002_PKA', '007_TKA', '009_TKA'],
     "test": ['004_PKA', '011_TKA', '036_PKA', '038_TKA'], # 004_PKA is flickering, if that is a big issue maybe change it to val. Maybe a validation take should be here also?
@@ -173,7 +174,9 @@ TRACK_TO_METAINFO = {
 
 LABEL_PROJECTION_MAP = {
     # DEBUG FOR OVERTRAINING
-    10: {'color': (76, 161, 245), 'label': 9},
+    10: {'color': (76, 161, 245), 'label': 0},
+    # 13: {'color': (0, 255, 128), 'label': 1},
+    # 15: {'color': (204, 0, 0), 'label': 2},
     
     # TRUE PROJECTION
     # 1: {'color': (255, 51, 153), 'label': 0},
