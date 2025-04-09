@@ -4,15 +4,15 @@ scratch:
   resolution: 512
   train_batch_size: 1
   num_train_workers: 1
-  base_lr: 1.0e-4  # 5.0e-6
+  base_lr: 1.0e-5  # 5.0e-6
   vision_lr: 3.0e-5  # 3.0e-06
-  # obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29]
-  obj_labels: [10]
-  num_frames: 3
-  max_epochs: 500
+  obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29]
+  # obj_labels: [10]
+  num_frames: 1
+  max_epochs: 100
   # Decoder
-  num_queries: 1
-  num_classes: 1
+  num_queries: 23
+  num_classes: 18
   mask_dim: 256
   name: ["res3", "res4", "res5"]
   channels: [256, 256, 256]
@@ -245,7 +245,7 @@ trainer:
     train:
       _target_: custom_models.dataset.mini_dataset.MiniDataset
       batch_size: ${scratch.train_batch_size}
-      split_type: 'over_train'
+      split_type: 'small_train'
       len_video: ${scratch.num_frames}
       input_image_size: ${scratch.resolution}
       object_labels: ${scratch.obj_labels}
@@ -255,19 +255,19 @@ trainer:
         _target_: training.utils.data_utils.collate_fn
         _partial_: true
         dict_key: all
-    # val:
-    #   _target_: custom_models.dataset.mini_dataset.MiniDataset
-    #   batch_size: ${scratch.train_batch_size}
-    #   split_type: 'over_train'
-    #   len_video: ${scratch.num_frames}
-    #   input_image_size: ${scratch.resolution}
-    #   object_labels: ${scratch.obj_labels}
-    #   transforms: ${vos.train_transforms}
-    #   num_workers: ${scratch.num_train_workers}
-    #   collate_fn:
-    #     _target_: training.utils.data_utils.collate_fn
-    #     _partial_: true
-    #     dict_key: val
+    val:
+      _target_: custom_models.dataset.mini_dataset.MiniDataset
+      batch_size: ${scratch.train_batch_size}
+      split_type: 'val'
+      len_video: ${scratch.num_frames}
+      input_image_size: ${scratch.resolution}
+      object_labels: ${scratch.obj_labels}
+      transforms: ${vos.train_transforms}
+      num_workers: ${scratch.num_train_workers}
+      collate_fn:
+        _target_: training.utils.data_utils.collate_fn
+        _partial_: true
+        dict_key: val
 
   optim:
     amp:
@@ -306,7 +306,7 @@ trainer:
       weight_decay:
         - scheduler:
             _target_: fvcore.common.param_scheduler.ConstantParamScheduler
-            value: 0.1  # 0.05 # 0.1
+            value: 0.05  # 0.05 # 0.1
         - scheduler:
             _target_: fvcore.common.param_scheduler.ConstantParamScheduler
             value: 0.0
@@ -335,27 +335,27 @@ trainer:
       importance_sample_ratio: 0.75
       deep_supervision: False
       pointwise_mask: False
-    # val:
-    #   _target_: custom_models.models.sam2former.criterion.SetCriterion
-    #   num_classes: ${scratch.num_classes}
-    #   matcher:
-    #     _target_: custom_models.models.sam2former.matcher.HungarianMatcher
-    #     cost_class: ${trainer.loss.all.weight_dict.loss_class}
-    #     cost_mask: ${trainer.loss.all.weight_dict.loss_mask}
-    #     cost_dice: ${trainer.loss.all.weight_dict.loss_dice}
-    #     num_points: ${trainer.loss.all.num_points}
-    #   weight_dict:
-    #     loss_mask: 5.0
-    #     loss_dice: 5.0
-    #     # loss_iou: 1
-    #     loss_class: 2.0
-    #   eos_coef: 0.1
-    #   losses: ['labels', 'masks']
-    #   num_points: 65536  # 12544
-    #   oversample_ratio: 3.0
-    #   importance_sample_ratio: 0.75
-    #   deep_supervision: False
-    #   pointwise_mask: False
+    val:
+      _target_: custom_models.models.sam2former.criterion.SetCriterion
+      num_classes: ${scratch.num_classes}
+      matcher:
+        _target_: custom_models.models.sam2former.matcher.HungarianMatcher
+        cost_class: ${trainer.loss.all.weight_dict.loss_class}
+        cost_mask: ${trainer.loss.all.weight_dict.loss_mask}
+        cost_dice: ${trainer.loss.all.weight_dict.loss_dice}
+        num_points: ${trainer.loss.all.num_points}
+      weight_dict:
+        loss_mask: 5.0
+        loss_dice: 5.0
+        # loss_iou: 1
+        loss_class: 2.0
+      eos_coef: 0.1
+      losses: ['labels', 'masks']
+      num_points: 65536  # 12544
+      oversample_ratio: 3.0
+      importance_sample_ratio: 0.75
+      deep_supervision: False
+      pointwise_mask: False
   
   distributed:
     backend: nccl
@@ -375,7 +375,7 @@ trainer:
     # NOTE: HEADS UP 
     # resume_from: sam2_logs/03_29_18_56/checkpoints/checkpoint.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
-    save_freq: 50 # 0 only last checkpoint is saved.
+    save_freq: 5 # 0 only last checkpoint is saved.
     model_weight_initializer:
       _partial_: True
       _target_: custom_models.models.sam2former.lib.load_state_dict_into_model
