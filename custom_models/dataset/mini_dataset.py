@@ -67,12 +67,14 @@ class MiniDataset(Dataset):
         self.images = []
         self.segmentation_masks = []
 
-        ### You can use Ege's however we dont wanna open the images beforehand but we will open on the run.
         # Iterate over the take folders
         for take_name in split_folder_names:
+            # Take name projection
+            take_folder = MMOR_TAKE_NAME_TO_FOLDER[take_name] if take_name in MMOR_TAKE_NAME_TO_FOLDER else take_name
+
             # Folder names
             json_path = root_path / 'take_jsons' / f'{take_name}.json'
-            take_path = root_path / take_name
+            take_path = root_path / take_folder
             print(f'Loading the take {take_name}!\n')
             
             # Read MMOR/Simstation JSON file for timestamps and image paths
@@ -82,49 +84,62 @@ class MiniDataset(Dataset):
                 timestamps = {int(k): v for k, v in timestamps.items()}
                 timestamps = sorted(timestamps.items())
 
-            # Check if the take needs to use simstation or azure
-            flag_simstation = False
-            seg_export_folders = [dir_name for dir_name in os.listdir(take_path) if dir_name.startswith('segmentation_export')]
-            if len(seg_export_folders) == 0:
-                flag_simstation = True
-                seg_export_folders = [dir_name for dir_name in os.listdir(take_path) if dir_name.startswith('simstation_segmentation_export')]
-                assert len(seg_export_folders) != 0, "Azure and Simstation data does not exist!"
-            camera_indices = [int(idx[-1]) for idx in seg_export_folders]
-            
-            # Iterate over the time stamps (The order of the for loops is changed to have a video from a cameraview first)
-            for c_idx in tqdm(camera_indices):
-                for idx, (timestamp, image_files) in enumerate(timestamps):
-                    # Create the video frames lists
-                    if idx % len_video == 0:
-                        video_batch_image = []
-                        video_batch_seg_mask = []
-
-                    # Data paths
-                    if not flag_simstation:
-                        rgb_path = take_path / 'colorimage' / f'camera0{c_idx}_colorimage-{image_files["azure"]}.jpg'
-                        mask_path = take_path / f'segmentation_export_{c_idx}' / f'{rgb_path.stem}.png'
-                        interpolated_mask_path = take_path / f'segmentation_export_{c_idx}' / f'{rgb_path.stem}_interpolated.png'
-                    else:
-                        # Simstation data paths
-                        rgb_path = take_path / 'simstation' / f'camera0{c_idx}_{image_files["simstation"]}.jpg'
-                        mask_path = take_path / f'simstation_segmentation_export_{c_idx}' / f'{rgb_path.stem}.png'
-                        interpolated_mask_path = take_path / f'simstation_segmentation_export_{c_idx}' / f'{rgb_path.stem}_interpolated.png'
-
-                    # Store the data paths
+            take_images = {i:[] for i in range(6)}
+            take_seg_masks = {i:[] for i in range(6)}
+            # Iterate through timestamps and generate multiview frames
+            for idx, (timestamp, image_files) in tqdm(enumerate(timestamps)):
+                flag_simstation = True if image_files["azure"] is None else False
+                for c_idx in [1, 4, 5]:
+                    rgb_path = take_path / 'colorimage' / f'camera0{c_idx}_colorimage-{image_files["azure"]}.jpg'
+                    mask_path = take_path / f'segmentation_export_{c_idx}' / f'{rgb_path.stem}.png'
+                    interpolated_mask_path = take_path / f'segmentation_export_{c_idx}' / f'{rgb_path.stem}_interpolated.png'
                     if mask_path.exists():
-                        video_batch_image.append(rgb_path)
-                        video_batch_seg_mask.append(mask_path)  
+                        take_images[c_idx].append(rgb_path)
+                        take_seg_masks[c_idx].append(mask_path)
                     elif interpolated_mask_path.exists():
-                        video_batch_image.append(rgb_path)
-                        video_batch_seg_mask.append(interpolated_mask_path)
-                    else:
-                        break  # in 010_PKA there are some problems with the first images: image_files['azure']=None, same for 011 TKA and 035 PKA, for only few time_stamps
+                        take_images[c_idx].append(rgb_path)
+                        take_seg_masks[c_idx].append(interpolated_mask_path)
 
-                    # Complete the video sequence
-                    if (idx % len_video == len_video - 1) or (idx == len(timestamps)-1):
-                        self.images.append(video_batch_image)
-                        self.segmentation_masks.append(video_batch_seg_mask)
-        if split_type == 'over_train':
+                # assume azure is not available, use simstation instead
+                if len(take_seg_masks[1]) == 0:
+                    assert flag_simstation, "The azure file should not exist!"
+                    assert len(take_seg_masks[1]) + len(take_seg_masks[4]) + len(take_seg_masks[5]) == 0, "Azure images from eah camera should not exist!"
+                    for c_idx in [0, 2, 3]:
+                        simstation_rgb_path = take_path / 'simstation' / f'camera0{c_idx}_{image_files["simstation"]}.jpg'
+                        simstation_mask_path = take_path / f'simstation_segmentation_export_{c_idx}' / f'{simstation_rgb_path.stem}.png'
+                        simstation_interpolated_mask_path = take_path / f'simstation_segmentation_export_{c_idx}' / f'{simstation_rgb_path.stem}_interpolated.png'
+                        if simstation_mask_path.exists():
+                            take_images[c_idx].append(simstation_rgb_path)
+                            take_seg_masks[c_idx].append(simstation_mask_path)
+                        elif simstation_interpolated_mask_path.exists():
+                            take_images[c_idx].append(simstation_rgb_path)
+                            take_seg_masks[c_idx].append(simstation_interpolated_mask_path)
+
+            # Create video frames, for now we dont care about the views
+            end_frame_idx = len(take_images[1]) if len(take_images[1]) != 0 else len(take_images[0])
+            assert len(take_images[1]) == len(take_images[4]) == len(take_images[5]), "The number of frames in the cameras are not equal!"
+            assert len(take_images[0]) == len(take_images[2]) == len(take_images[3]), "The number of frames in the cameras are not equal!"
+
+            # Define Slices
+            start_idx = [i for i in range(0, end_frame_idx, len_video)]
+            end_idx = [i for i in range(len_video, end_frame_idx+len_video, len_video)]
+
+            # Slice the images from the take_images and take_seg_masks
+            take_video = [take_images[k][ii:jj] for ii, jj in zip(start_idx, end_idx) for k in take_images.keys() if len(take_images[k]) != 0]
+            take_video_seg_mask = [take_seg_masks[k][ii:jj] for ii, jj in zip(start_idx, end_idx) for k in take_seg_masks.keys() if len(take_seg_masks[k]) != 0]
+            self.images = self.images + take_video
+            self.segmentation_masks = self.segmentation_masks + take_video_seg_mask
+
+            # flag_simstation is not to trust since the begining of the timestamps could be azure and the rest simstation
+            # Be sure we take every frame
+            if len(take_images[1]) != 0:
+                assert (take_video[-1][-1] == take_images[5][-1]
+                        ), "The last frame of the video is not the last frame of the take!"
+            else:
+                assert (take_video[-1][-1] == take_images[3][-1]
+                        ), "The last frame of the video is not the last frame of the take!"
+
+        if split_type == 'over_train' and False:
             cam_switch = len(self.images) // 3 // len_video
             start_idx = 2700 // len_video
             end_idx = 2900 // len_video

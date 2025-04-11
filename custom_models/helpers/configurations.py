@@ -83,7 +83,7 @@ MMOR_TAKE_NAME_TO_FOLDER = {'012_1_PKA': '012_PKA', '012_2_PKA': '012_PKA', '015
                             '027_PKA': '023-032_PKA', '028_PKA': '023-032_PKA', '029_PKA': '023-032_PKA', '030_PKA': '023-032_PKA', '031_PKA': '023-032_PKA', '032_PKA': '023-032_PKA'}
 
 MMOR_SPLIT_TO_TAKES = {
-    "train": ['001_PKA', '003_TKA', '005_TKA', '006_PKA', '008_PKA', '010_PKA', '011_TKA', '035_PKA', '037_TKA'],  # deleted , '012_PKA'
+    "train": ['001_PKA', '003_TKA', '005_TKA', '006_PKA', '008_PKA', '010_PKA', '012_1_PKA', '035_PKA', '037_TKA'],  # deleted , '012_PKA'
     "small_train": ['001_PKA', '003_TKA', '035_PKA', '037_TKA', '005_TKA'],
     "over_train": ['001_PKA'],
     "over_train2": ['001_PKA'],
@@ -204,27 +204,27 @@ LABEL_PROJECTION_MAP = {
     # 29: {'color': (153, 76, 0), 'label': 22},
 
     # PROJECTION WITH HUMAN LABEL
-    1: {'color': (255, 51, 153), 'label': 0},
-    2: {'color': (0, 0, 255), 'label': 1},
-    3: {'color': (255, 255, 0), 'label': 2},
-    4: {'color': (133, 0, 133), 'label': 3},
-    5: {'color': (255, 0, 0), 'label': 4},
-    6: {'color': (183, 91, 255), 'label': 5},
-    7: {'color': (177, 255, 110), 'label': 6},
-    8: {'color': (255, 128, 0), 'label': 6},
-    9: {'color': (116, 166, 116), 'label': 6},
-    10: {'color': (76, 161, 245), 'label': 6},
-    11: {'color': (125, 100, 25), 'label': 6},
-    12: {'color': (128, 255, 0), 'label': 6},
-    13: {'color': (0, 255, 128), 'label': 7},
-    15: {'color': (204, 0, 0), 'label': 8},
-    16: {'color': (0, 255, 234), 'label': 9},
-    17: {'color': (255, 128, 128), 'label': 10},
-    18: {'color': (60, 75, 255), 'label': 11},
-    24: {'color': (255, 255, 128), 'label': 12},
-    25: {'color': (0, 204, 128), 'label': 13},
-    26: {'color': (255, 255, 255), 'label': 14},
-    27: {'color': (162, 232, 108), 'label': 15},
-    28: {'color': (153, 0, 153), 'label': 16},
-    29: {'color': (153, 76, 0), 'label': 17},
+    1: {'color': (255, 51, 153), 'label': 0},    # 'instrument_table'
+    2: {'color': (0, 0, 255), 'label': 1},       # 'ae'
+    3: {'color': (255, 255, 0), 'label': 2},     # 'ot'
+    4: {'color': (133, 0, 133), 'label': 3},     # 'mps_station'
+    5: {'color': (255, 0, 0), 'label': 4},       # 'patient'
+    6: {'color': (183, 91, 255), 'label': 5},    # 'drape'
+    7: {'color': (177, 255, 110), 'label': 6},   # 'anest'
+    8: {'color': (255, 128, 0), 'label': 6},     # 'circulator'
+    9: {'color': (116, 166, 116), 'label': 6},   # 'assistant_surgeon'
+    10: {'color': (76, 161, 245), 'label': 6},   # 'head_surgeon'
+    11: {'color': (125, 100, 25), 'label': 6},   # 'mps'
+    12: {'color': (128, 255, 0), 'label': 6},    # 'nurse'
+    13: {'color': (0, 255, 128), 'label': 7},    # 'drill'
+    15: {'color': (204, 0, 0), 'label': 8},      # 'hammer'
+    16: {'color': (0, 255, 234), 'label': 9},    # 'saw'
+    17: {'color': (255, 128, 128), 'label': 10}, # 'tracker'
+    18: {'color': (60, 75, 255), 'label': 11},   # 'mako_robot'
+    24: {'color': (255, 255, 128), 'label': 12}, # 'monitor'
+    25: {'color': (0, 204, 128), 'label': 13},   # 'c_arm'
+    26: {'color': (255, 255, 255), 'label': 6},  # 'unrelated_person'
+    27: {'color': (162, 232, 108), 'label': 6},  # 'student'
+    28: {'color': (153, 0, 153), 'label': 14},   # 'secondary_table'
+    29: {'color': (153, 76, 0), 'label': 15},    # 'cementer'
 }

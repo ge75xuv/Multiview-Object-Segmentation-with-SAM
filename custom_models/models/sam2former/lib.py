@@ -4,10 +4,45 @@ import copy
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Callable
 
+from fvcore.common.param_scheduler import ParamScheduler
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributed as dist
+
+# fvcore overrides
+class LinearParamScheduler(ParamScheduler):
+    """
+    Linearly interpolates parameter between ``start_value`` and ``end_value``.
+    Can be used for either warmup or decay based on start and end values.
+    The schedule is updated after every train step by default.
+
+    Example:
+
+        .. code-block:: python
+
+            LinearParamScheduler(start_value=0.0001, end_value=0.01)
+
+    Corresponds to a linear increasing schedule with values in [0.0001, 0.01)
+    """
+
+    def __init__(
+        self,
+        start_value: float,
+        end_value: float,
+        warmup_length: float
+    ) -> None:
+        self._start_value = start_value
+        self._end_value = end_value
+        self._warmup_length = warmup_length
+        assert warmup_length > 0 and warmup_length < 1, "Warmup length must be positive and smaller than 1"
+
+    def __call__(self, where: float) -> float:
+        # interpolate between start and end values
+        where = where / self._warmup_length
+        if where > 1:
+            return self._end_value
+        return self._end_value * where + self._start_value * (1 - where)
 
 # training overrides
 def load_state_dict_into_model(

@@ -265,7 +265,7 @@ if __name__ == "__main__":
     parser.add_argument("--account", type=str, default=None, help="SLURM account")
     parser.add_argument("--qos", type=str, default=None, help="SLURM qos")
     parser.add_argument(
-        "--num-gpus", type=int, default=1, help="number of GPUS per node"
+        "--num-gpus", type=int, default=None, help="number of GPUS per node"
     )
     parser.add_argument("--num-nodes", type=int, default=1, help="Number of nodes")
     args = parser.parse_args()

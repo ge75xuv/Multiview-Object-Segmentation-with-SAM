@@ -9,10 +9,10 @@ scratch:
   obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29]
   # obj_labels: [10]
   num_frames: 1
-  max_epochs: 100
+  max_epochs: 15
   # Decoder
   num_queries: 23
-  num_classes: 18
+  num_classes: 16
   mask_dim: 256
   name: ["res3", "res4", "res5"]
   channels: [256, 256, 256]
@@ -293,6 +293,17 @@ trainer:
 
     options:
       lr:
+        # - scheduler:
+        #     _target_: custom_models.models.sam2former.lib.LinearParamScheduler
+        #     # scheduler:
+        #     #   _target_: fvcore.common.param_scheduler.CosineParamScheduler
+        #     #   start_value: ${scratch.base_lr}
+        #     #   end_value: ${divide:${scratch.base_lr},1}
+        #     start_value: ${divide:${scratch.base_lr},1000}
+        #     end_value:  ${scratch.base_lr}
+        #     warmup_length: 0.05  # 5% of total steps, adjust as needed
+        #   param_names:
+        #     - "sam_mask_decoder.*"
         - scheduler:
             _target_: fvcore.common.param_scheduler.CosineParamScheduler
             start_value: ${scratch.base_lr}
@@ -375,7 +386,7 @@ trainer:
     # NOTE: HEADS UP 
     # resume_from: sam2_logs/03_29_18_56/checkpoints/checkpoint.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
-    save_freq: 5 # 0 only last checkpoint is saved.
+    save_freq: 1 # 0 only last checkpoint is saved.
     model_weight_initializer:
       _partial_: True
       _target_: custom_models.models.sam2former.lib.load_state_dict_into_model
@@ -389,7 +400,7 @@ trainer:
 
 launcher:
   num_nodes: 1
-  gpus_per_node: 1
+  gpus_per_node: 2
   experiment_log_dir: null # Path to log directory, defaults to ./sam2_logs/${config_name}
 
 # SLURM args if running on a cluster
