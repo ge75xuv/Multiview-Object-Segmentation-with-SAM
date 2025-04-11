@@ -51,12 +51,19 @@ np.random.seed(seed)
 def train():
     # Hyperparameters
     epochs = 1
-    batch_size = 1
+    batch_size = 2
     shuffle = False
     len_video = 1
+    # assert (
+    #         (batch_size == 1 and len_video != 1) 
+    #     or (batch_size != 1 and len_video == 1) 
+    #     or (batch_size * len_video == 1)
+    #     ), "At least one of them has to be 1"
+    assert not (batch_size != 1 and len_video != 1), "At least one of them has to be 1"
     model_size = 'sam2former'
     input_image_size = 512
-    object_labels = [10]
+    object_labels = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29]
+    # [10, 13, 15, 16]
     len_objects = len(object_labels)
     #  The list structure is just the way hydra parses the .yaml
     transforms = [ComposeAPI([NormalizeAPI(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], v2=True)])]
@@ -85,7 +92,7 @@ def train():
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_fn)
     valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
 
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    device = "cuda:1" if torch.cuda.is_available() else "cpu"
     autocast_dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float16
     iters_per_epoch = len(train_loader)
     print(f'Device: {device}\n')
@@ -109,6 +116,7 @@ def train():
         build_fcn = builder_type[model_size]
         model, loss, optim = build_fcn(config, ck, mode='train', _load_partial=False, device=device)
 
+    loss = loss.to(device)
     scaler = GradScaler(device=device, enabled=True, )
     gradient_clipper = GradientClipper(max_norm=0.1, norm_type=2)
     where = 0
@@ -134,12 +142,17 @@ def train():
                 all_frame_outputs = model(batched_video_data)
                 if model_size == 'sam2former':
                     masks = []
-                    for i in range(len_video):
+                    num_frames_batch = [idx for idx in range(len(batched_video_data.img_batch))]
+                    video_idx_batch = batched_video_data.metadata.unique_objects_identifier[:,:,0].unique()
+                    idx2iter = num_frames_batch if num_frames_batch != [0] else video_idx_batch
+                    iter_dim = 2 if num_frames_batch != [0] else 0
+                    print(data_t[0].metadata.unique_objects_identifier)
+                    for i in idx2iter:
                         # dim=2 video_id, obj_id, frame_id
-                        xx, yy = torch.where(data_t[0].metadata.unique_objects_identifier[:,:,2] == i)
-                        obj_id = data_t[0].metadata.unique_objects_identifier[xx,yy,1]
+                        xx, yy = torch.where(batched_video_data.metadata.unique_objects_identifier[:,:,iter_dim] == i)
+                        obj_id = batched_video_data.metadata.unique_objects_identifier[xx,yy,1]
                         masks.append({
-                            "masks": data_t[0].masks[i],
+                            "masks": batched_video_data.masks[xx, yy],
                             "labels": obj_id,
                         })
                 loss_dict = loss(all_frame_outputs, masks)
@@ -147,22 +160,21 @@ def train():
             # multistep_pred_masks_high_res - multistep_pred_multimasks_high_res - pred_masks_high_res
             # the loss handles it itself technically multimask refers to all 3 estimations
             iter_loss = loss_dict['core_loss']
-            scaler.scale(iter_loss).backward()
-            # They use core loss for backprop and use others for logging, see _log_loss_detailed_and_return_core_loss()
+            # scaler.scale(iter_loss).backward()
             exact_epoch = epoch + float(idx_t) / iters_per_epoch
             where = float(exact_epoch) / epochs
             assert where <= 1 + 1e-5
-            if where < 1.0:
-                optim.step_schedulers(
-                    where, step=int(exact_epoch * iters_per_epoch)
-                )
-            if gradient_clipper is not None:
-                scaler.unscale_(optim.optimizer)
-                gradient_clipper(model=model)
+            # if where < 1.0:
+            #     optim.step_schedulers(
+            #         where, step=int(exact_epoch * iters_per_epoch)
+            #     )
+            # if gradient_clipper is not None:
+            #     scaler.unscale_(optim.optimizer)
+            #     gradient_clipper(model=model)
             # Optimizer step: the scaler will make sure gradients are not
             # applied if the gradients are infinite
-            scaler.step(optim.optimizer)
-            scaler.update()
+            # scaler.step(optim.optimizer)
+            # scaler.update()
             writer.add_scalar("Loss/train", iter_loss, epoch)
 
         model.eval()

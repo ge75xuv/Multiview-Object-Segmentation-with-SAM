@@ -177,6 +177,7 @@ LABEL_PROJECTION_MAP = {
     # 10: {'color': (76, 161, 245), 'label': 0},
     # 13: {'color': (0, 255, 128), 'label': 1},
     # 15: {'color': (204, 0, 0), 'label': 2},
+    # 16: {'color': (0, 255, 234), 'label': 3},
 
     # TRUE PROJECTION
     # 1: {'color': (255, 51, 153), 'label': 0},

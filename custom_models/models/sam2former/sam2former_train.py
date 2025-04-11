@@ -107,6 +107,8 @@ class SAM2FormerTrain(SAM2FormerBase):
     def forward(self, input: BatchedVideoDatapoint):
         if self.training or not self.forward_backbone_per_frame_for_eval:
             # precompute image features on all frames before tracking
+            # input.img_batch.shape = (num_frames, B, 3, H, W)
+            # input.flat_img_batch = (B * num_frames, 3, H, W)
             backbone_out = self.forward_image(input.flat_img_batch)
         else:
             # defer image feature computation on a frame until it's being tracked
@@ -225,8 +227,10 @@ class SAM2FormerTrain(SAM2FormerBase):
         for stage_id in processing_order:
             # Get the image features for the current frames
             # HEADS UP, we need the index of the frame but we dont want to repeat it O (object number) many times for the batch size
+            # This part is fairly hard to understand but basically we need to select the features in the given frame among
+            # (B*L, C, H, W). Since B*L is a flat dimension.
             img_ids = input.flat_obj_to_img_idx[stage_id]
-            img_ids = img_ids[0:1]
+            img_ids = img_ids.unique()
             if img_feats_already_computed:
                 # Retrieve image features according to img_ids (if they are already computed).
                 current_vision_feats = [x[:, img_ids] for x in vision_feats]
@@ -256,6 +260,7 @@ class SAM2FormerTrain(SAM2FormerBase):
                 # frames_to_add_correction_pt=frames_to_add_correction_pt,
                 output_dict=output_dict,
                 num_frames=num_frames,
+                run_mem_encoder=True if num_frames > 1 else False,
             )
             # Append the output, depending on whether it's a conditioning frame
             add_output_as_cond_frame = stage_id in init_cond_frames or (

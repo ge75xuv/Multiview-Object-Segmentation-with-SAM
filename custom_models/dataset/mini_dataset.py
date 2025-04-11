@@ -17,7 +17,7 @@ class MiniDataset(Dataset):
     
     def __init__(self,
                  split_type:str,
-                 len_video:int,
+                 num_frames:int,
                  input_image_size:int,
                  object_labels: List[int],
                  transforms,
@@ -35,7 +35,7 @@ class MiniDataset(Dataset):
         '''
         super().__init__()
         # Arguments
-        self.len_video = len_video
+        self.num_frames = num_frames
         self.batch_size = batch_size
         self.num_workers= num_workers
         self.collate_fn=collate_fn
@@ -121,8 +121,8 @@ class MiniDataset(Dataset):
             assert len(take_images[0]) == len(take_images[2]) == len(take_images[3]), "The number of frames in the cameras are not equal!"
 
             # Define Slices
-            start_idx = [i for i in range(0, end_frame_idx, len_video)]
-            end_idx = [i for i in range(len_video, end_frame_idx+len_video, len_video)]
+            start_idx = [i for i in range(0, end_frame_idx, num_frames)]
+            end_idx = [i for i in range(num_frames, end_frame_idx+num_frames, num_frames)]
 
             # Slice the images from the take_images and take_seg_masks
             take_video = [take_images[k][ii:jj] for ii, jj in zip(start_idx, end_idx) for k in take_images.keys() if len(take_images[k]) != 0]
@@ -140,9 +140,9 @@ class MiniDataset(Dataset):
                         ), "The last frame of the video is not the last frame of the take!"
 
         if split_type == 'over_train' and False:
-            cam_switch = len(self.images) // 3 // len_video
-            start_idx = 2700 // len_video
-            end_idx = 2900 // len_video
+            cam_switch = len(self.images) // 3 // num_frames
+            start_idx = 2700 // num_frames
+            end_idx = 2900 // num_frames
             # idx_range_free = [i for i in range(1900, 2100)]
             idx_range_free = []
             idx_range_cam1 = [i for i in range(start_idx, end_idx)]
@@ -164,7 +164,7 @@ class MiniDataset(Dataset):
         manager = Manager()
         self.images = manager.list(self.images)
         self.segmentation_masks = manager.list(self.segmentation_masks)
-        #TODO Another solution is to use np.array(self.images) however if len_video > 1 and there is an uncomplete video
+        #TODO Another solution is to use np.array(self.images) however if num_frames > 1 and there is an uncomplete video
         # left, then thre will be inhomogeneous shapes in the array. So we may need to dump it.
         # Convert the list into a numpy array
         # self.images = np.array(self.images)

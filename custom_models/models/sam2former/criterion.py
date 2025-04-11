@@ -231,7 +231,8 @@ class SetCriterion(nn.Module):
                       The expected keys in each dict depends on the losses applied, see each loss' doc
         """
         num_frames = len(all_outputs.keys())
-        assert num_frames == len(targets)
+        batch_size = all_outputs[0]["pred_logits"].shape[0]
+        assert num_frames * batch_size == len(targets)
 
         # All Outputs is a dict that has keys as frame numbers and values as output dict of mask2former
         if num_frames > 1:

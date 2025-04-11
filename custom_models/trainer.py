@@ -469,12 +469,16 @@ class Trainer:
         key = batch.dict_key  # key for dataset
 
         # HEADS UP: Reshape the target for the loss
-        for i in range(batch_size):
+        frame_idx = [idx for idx in range(batch_size)]  # Batch size is technically num frames
+        batch_idx = batch.metadata.unique_objects_identifier[:,:,0].unique()
+        iter_indeces = frame_idx if frame_idx != [0] else batch_idx
+        iter_dim = 2 if frame_idx != [0] else 0
+        for i in iter_indeces:
             # dim=2 video_id, obj_id, frame_id
-            xx, yy = torch.where(batch.metadata.unique_objects_identifier[:,:,2] == i)
+            xx, yy = torch.where(batch.metadata.unique_objects_identifier[:,:,iter_dim] == i)
             obj_id = batch.metadata.unique_objects_identifier[xx,yy,1]
             targets.append({
-                "masks": batch.masks[i],
+                "masks": batch.masks[xx, yy],
                 "labels": obj_id,
             })
 
@@ -537,6 +541,10 @@ class Trainer:
     def _setup_dataloaders(self):
         self.train_dataset = None
         self.val_dataset = None
+
+        # HEADS UP
+        assert not (self.data_conf.train.batch_size !=1 and 
+                    self.data_conf.train.num_frames != 1), "Either batch size or num frames should be 1, not both"
 
         if self.mode in ["train", "val"]:
             self.val_dataset = instantiate(self.data_conf.get(Phase.VAL, None))
