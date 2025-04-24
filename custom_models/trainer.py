@@ -526,7 +526,7 @@ class Trainer:
             if self.epoch > 0:
                 logging.info(f"Resuming training from epoch: {self.epoch}")
                 # resuming from a checkpoint
-                if self.is_intermediate_val_epoch(self.epoch - 1):
+                if self.is_intermediate_val_epoch(self.epoch - 1) and False:
                     logging.info("Running previous val epoch")
                     self.epoch -= 1
                     self.run_val()
@@ -544,7 +544,7 @@ class Trainer:
 
         # HEADS UP
         assert not (self.data_conf.train.batch_size !=1 and 
-                    self.data_conf.train.num_frames != 1), "Either batch size or num frames should be 1, not both"
+                    self.data_conf.train.num_frames != 1), "Either batch size or num frames should be greater than 1, not both"
 
         if self.mode in ["train", "val"]:
             self.val_dataset = instantiate(self.data_conf.get(Phase.VAL, None))

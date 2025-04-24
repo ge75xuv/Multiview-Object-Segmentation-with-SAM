@@ -51,9 +51,9 @@ np.random.seed(seed)
 def train():
     # Hyperparameters
     epochs = 1
-    batch_size = 2
+    batch_size = 1
     shuffle = False
-    len_video = 1
+    len_video = 3
     # assert (
     #         (batch_size == 1 and len_video != 1) 
     #     or (batch_size != 1 and len_video == 1) 
@@ -92,7 +92,7 @@ def train():
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_fn)
     valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
 
-    device = "cuda:1" if torch.cuda.is_available() else "cpu"
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
     autocast_dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float16
     iters_per_epoch = len(train_loader)
     print(f'Device: {device}\n')

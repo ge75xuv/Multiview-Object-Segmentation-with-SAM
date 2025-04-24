@@ -159,16 +159,20 @@ class MiniDataset(Dataset):
             self.images = [self.images[i] for i in idx_range]
             self.segmentation_masks = [self.segmentation_masks[i] for i in idx_range]
 
+        del take_video
+        del take_video_seg_mask
+        del take_images
+        del take_seg_masks
+
         # Python multiprocessing manager
         # This is a workaround for the multiprocessing issue with PyTorch
-        manager = Manager()
-        self.images = manager.list(self.images)
-        self.segmentation_masks = manager.list(self.segmentation_masks)
-        #TODO Another solution is to use np.array(self.images) however if num_frames > 1 and there is an uncomplete video
-        # left, then thre will be inhomogeneous shapes in the array. So we may need to dump it.
+        # manager = Manager()
+        # self.images = manager.list(self.images)
+        # self.segmentation_masks = manager.list(self.segmentation_masks)
+
         # Convert the list into a numpy array
-        # self.images = np.array(self.images)
-        # self.segmentation_masks = np.array(self.segmentation_masks)
+        self.images = np.array(self.images)
+        self.segmentation_masks = np.array(self.segmentation_masks)
 
     def __len__(self):
         return len(self.segmentation_masks)
