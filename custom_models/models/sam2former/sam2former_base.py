@@ -191,6 +191,7 @@ class SAM2FormerBase(torch.nn.Module):
         # HEADS UP
         # Memory projection for multiobject
         # num_queries = mask_decoder_cfg['transformer_predictor']['num_queries']
+        # TODO PROJECT IT TO BATCH SIZE not 1
         num_queries = self.sam_mask_decoder.predictor.num_queries
         self.multi_object_memory_proj = torch.nn.Linear(num_queries,1)
         self.multi_object_memory_pos_proj = torch.nn.Linear(num_queries,1)

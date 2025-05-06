@@ -383,7 +383,7 @@ trainer:
   # initialize from a SAM 2 checkpoint
   checkpoint:
     # NOTE: HEADS UP 
-    resume_from: sam2_logs/04_16_11_40/checkpoints/checkpoint_26.pt
+    resume_from: sam2_logs/04_24_14_07/checkpoints/checkpoint_28.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
     save_freq: 1 # 0 only last checkpoint is saved.
     model_weight_initializer:
