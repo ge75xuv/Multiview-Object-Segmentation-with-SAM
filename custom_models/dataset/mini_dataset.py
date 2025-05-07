@@ -56,6 +56,7 @@ class MiniDataset(Dataset):
 
         # Adjustment for the trainer
         self.get_seg_mask = kwargs.get('get_seg_mask', False)
+        self.shuffle = kwargs.get('shuffle', False)
 
         # Get root path and split folders
         root_path = MMOR_DATA_ROOT_PATH
@@ -238,7 +239,7 @@ class MiniDataset(Dataset):
         return out_image
 
     def get_loader(self, **kwargs):
-        return DataLoader(self, batch_size=self.batch_size, shuffle=False, collate_fn=self.collate_fn, num_workers=self.num_workers)
+        return DataLoader(self, batch_size=self.batch_size, shuffle=self.shuffle, collate_fn=self.collate_fn, num_workers=self.num_workers)
 
     def load_checkpoint_state(*args, **kwargs):
         pass
