@@ -46,7 +46,7 @@ class MiniDataset(Dataset):
         assert all([obj in true_labels for obj in object_labels]), 'Unidentified key in the obj labels'
 
         # Initialize image resizer
-        original_image_size = (1536, 2048)  # (H,W)
+        original_image_size = (1536, 2048)  # (H,W)  # TODO the images are not always the same, azure and simstation have different sizes
         scaling_factor = original_image_size[1] // input_image_size  # Depends on the long edge, short will be padded.
         resize_shape = [original_image_size[0] // scaling_factor, input_image_size]
         self.resize_image = Resize(resize_shape)
