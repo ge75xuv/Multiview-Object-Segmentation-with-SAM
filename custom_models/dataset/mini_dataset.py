@@ -126,12 +126,14 @@ class MiniDataset(Dataset):
             end_idx = [i for i in range(num_frames, end_frame_idx+num_frames, num_frames)]
 
             # Slice the images from the take_images and take_seg_masks
-            take_video = [take_images[k][ii:jj] for ii, jj in zip(start_idx, end_idx) for k in take_images.keys() if len(take_images[k]) != 0]
-            take_video_seg_mask = [take_seg_masks[k][ii:jj] for ii, jj in zip(start_idx, end_idx) for k in take_seg_masks.keys() if len(take_seg_masks[k]) != 0]
-            self.images = self.images + take_video
-            self.segmentation_masks = self.segmentation_masks + take_video_seg_mask
+            # TODO for multiview, we should put videos after each other
+            if num_frames == 1:    
+                take_video = [take_images[k][ii:jj] for ii, jj in zip(start_idx, end_idx) for k in take_images.keys() if len(take_images[k]) != 0]
+                take_video_seg_mask = [take_seg_masks[k][ii:jj] for ii, jj in zip(start_idx, end_idx) for k in take_seg_masks.keys() if len(take_seg_masks[k]) != 0]
+            else:
+                take_video = [take_images[k][ii:jj] for k in take_images.keys() for ii, jj in zip(start_idx, end_idx) if len(take_images[k]) != 0]
+                take_video_seg_mask = [take_seg_masks[k][ii:jj] for k in take_seg_masks.keys() for ii, jj in zip(start_idx, end_idx) if len(take_seg_masks[k]) != 0]
 
-            # flag_simstation is not to trust since the begining of the timestamps could be azure and the rest simstation
             # Be sure we take every frame
             if len(take_images[1]) != 0:
                 assert (take_video[-1][-1] == take_images[5][-1]
@@ -139,6 +141,14 @@ class MiniDataset(Dataset):
             else:
                 assert (take_video[-1][-1] == take_images[3][-1]
                         ), "The last frame of the video is not the last frame of the take!"
+
+            # Remove the uncomplete videos (Essential for converting to numpy)
+            take_video = [im for im in take_video if len(im) == num_frames]
+            take_video_seg_mask = [seg for seg in take_video_seg_mask if len(seg) == num_frames]
+
+            # Append the video frames to the dataset
+            self.images = self.images + take_video
+            self.segmentation_masks = self.segmentation_masks + take_video_seg_mask
 
         if split_type == 'over_train' and False:
             cam_switch = len(self.images) // 3 // num_frames

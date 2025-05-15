@@ -66,6 +66,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         # of all frames at once. This avoids backbone OOM errors on very long videos in evaluation, but could be slightly slower.
         forward_backbone_per_frame_for_eval=False,
         freeze_image_encoder=False,
+        freeze_sam_mask_decoder=False,
         **kwargs,
     ):
         super().__init__(image_encoder, memory_attention, memory_encoder, **kwargs)
@@ -101,7 +102,13 @@ class SAM2FormerTrain(SAM2FormerBase):
         self.rng = np.random.default_rng(seed=42)
 
         if freeze_image_encoder:
+            # HEADS UP
             for p in self.image_encoder.trunk.parameters():
+            # for p in self.image_encoder.parameters():
+                p.requires_grad = False
+        if freeze_sam_mask_decoder:
+            # HEADS UP
+            for p in self.sam_mask_decoder.parameters():
                 p.requires_grad = False
 
     def forward(self, input: BatchedVideoDatapoint):
@@ -152,13 +159,6 @@ class SAM2FormerTrain(SAM2FormerBase):
         """
         # Load the ground-truth masks on all frames (so that we can later
         # sample correction points from them)
-
-        gt_masks_per_frame = {
-            stage_id: masks.unsqueeze(1)  # [B, 1, H_im, W_im]
-            for stage_id, masks in enumerate(input.masks)
-        }
-        # gt_masks_per_frame = input.masks.unsqueeze(2) # [T,B,1,H_im,W_im] keep everything in tensor form
-        backbone_out["gt_masks_per_frame"] = gt_masks_per_frame
         num_frames = input.num_frames
         backbone_out["num_frames"] = num_frames
 
@@ -167,8 +167,8 @@ class SAM2FormerTrain(SAM2FormerBase):
             num_init_cond_frames = 1
             rand_init_cond_frames = False
         else:
-            num_init_cond_frames = self.num_init_cond_frames_for_eval
-            rand_init_cond_frames = self.rand_init_cond_frames_for_eval
+            num_init_cond_frames = 1
+            rand_init_cond_frames = False
 
         if num_frames == 1:
             # here we handle a special case for mixing video + SAM on image training,
@@ -256,7 +256,7 @@ class SAM2FormerTrain(SAM2FormerBase):
                 feat_sizes=feat_sizes,
                 # point_inputs=backbone_out["point_inputs_per_frame"].get(stage_id, None),
                 # mask_inputs=backbone_out["mask_inputs_per_frame"].get(stage_id, None),
-                gt_masks=backbone_out["gt_masks_per_frame"].get(stage_id, None),
+                # gt_masks=backbone_out["gt_masks_per_frame"].get(stage_id, None),
                 # frames_to_add_correction_pt=frames_to_add_correction_pt,
                 output_dict=output_dict,
                 num_frames=num_frames,

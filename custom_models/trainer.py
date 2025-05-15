@@ -556,7 +556,6 @@ class Trainer:
 
         while self.epoch < self.max_epochs:
             dataloader = self.train_dataset.get_loader(epoch=int(self.epoch))
-            #TODO Delete self.train_dataset
             barrier()
             outs = self.train_epoch(dataloader)
             self.logger.log_dict(outs, self.epoch)  # Logged only on rank 0
