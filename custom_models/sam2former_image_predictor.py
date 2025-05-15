@@ -81,6 +81,7 @@ print(f'Lenght of the dataset! {len(test_dataset)}')
 seed = 2 # Check seed 123 index 19966
 torch.manual_seed(seed)
 np.random.seed(seed)
+flag_print_logs = False
 
 # Image
 len_objects = len(object_labels)
@@ -90,18 +91,28 @@ if_break = False
 sample_idx = 10
 test_loader = test_dataset.get_loader()
 
+del test_dataset
+
+# Prepare panoptic quality metric
+# Stuff: 16, Things: 17 Instance labels: 0-15
+background = 16
+things = {LABEL_PROJECTION_MAP[idx]['label'] for idx in object_labels}
+stuff = {background, background+1}  # Putting 17 does not change anything for the last value
 pq_list = []
+panoptic_quality = PanopticQuality(stuffs=stuff, things=things).to(device)
 
 # Run the model
 with torch.no_grad():
     submodel.eval()
     for idx, batch in tqdm(enumerate(test_loader)):
-        print(f"Processing {idx}th sample")
+        # print(f"Processing {idx}th sample")
         batched_video_data_val = batch[0].to(device)
         # batch_seg_mask_gt = batch[1]  # List of PIL Image for debug
         masks_val = batch[0].masks.to(device)
         with autocast(device_type=device, dtype=amp_type):
             all_frame_outputs_val = submodel(batched_video_data_val)
+
+        print('CP: 1') if flag_print_logs else None
 
         # Convert mask prediction logits to binary masks
         binary_pred_masks = all_frame_outputs_val[0]['pred_masks_high_res'].sigmoid() > 0.5
@@ -148,6 +159,9 @@ with torch.no_grad():
         del gt_mask
         del gt_labels
     
+    
+        print('CP: 2') if flag_print_logs else None
+    
         # Initialize lists for masks
         # pred_rgb_mask_list_azure = []
         pred_seg_class_mask_list_azure = []
@@ -175,6 +189,9 @@ with torch.no_grad():
             else:
                 raise ValueError("Padding not found in the image")
 
+
+        print('CP: 3') if flag_print_logs else None
+
         # Concatenate the masks
         # pred_rgb_mask = np.array(pred_rgb_mask_list_azure)
         pred_seg_class_mask = np.array(pred_seg_class_mask_list_azure)
@@ -182,14 +199,13 @@ with torch.no_grad():
         gt_seg_class_mask = np.array(gt_seg_class_mask_list_azure)
         
         # Open Memory
+        del batched_video_data_val
+        del masks_val
         del pred_seg_class_mask_list_azure
         del gt_seg_class_mask_list_azure
 
-        # Stuff: 16, Things: 17 Instance labels: 0-15
-        background = 16
-        things = {LABEL_PROJECTION_MAP[idx]['label'] for idx in object_labels}
-        stuff = {background, background+1}  # Putting 17 does not change anything for the last value
-        # print(f'Things: {things}\nStuff: {stuff}')
+
+        print('CP: 4') if flag_print_logs else None
 
         # Prepare stuff and things mask for prediction
         preds = pred_seg_class_mask[:, 0, :, :, None]
@@ -206,16 +222,18 @@ with torch.no_grad():
         target = np.concatenate((stuff_things_mask_gt, target), axis=3)
 
         # Convert to torch tensors
-        preds = torch.tensor(preds)
-        target = torch.tensor(target)
+        preds = torch.tensor(preds, device=device)
+        target = torch.tensor(target, device=device)
 
-        # Prepare panoptic quality metric
-        panoptic_quality = PanopticQuality(stuffs=stuff, things=things)
+        print('CP: 5') if flag_print_logs else None
+
+        # Compute PQ
         pq = panoptic_quality(preds, target)
-        pq_list.append(pq)
+        pq_list.append(pq.item())
         print(f"PQ: {pq}")
         writer.add_scalar(f"PQ/test_{batch_size}", pq, idx)
-        writer.flush()
+        writer.flush() if idx % 10 == 0 else None
+        torch.cuda.empty_cache()
 
 average_pq = sum(pq_list) / len(pq_list)
 print(f"Average PQ: {average_pq}")
