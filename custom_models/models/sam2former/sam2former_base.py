@@ -737,6 +737,10 @@ class SAM2FormerBase(torch.nn.Module):
                 # mask_inputs=mask_inputs,
                 high_res_features=high_res_features,
             )
+        
+        # Deep supervision is not used for batch size > 1, remove auxillary outputs
+        if pix_feat.shape[0] > 1 or num_frames > 1:
+            sam_outputs = sam_outputs[:-1] + (None,)
 
         return current_out, sam_outputs, high_res_features, pix_feat
 

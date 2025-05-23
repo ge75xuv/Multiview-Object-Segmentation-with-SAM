@@ -15,6 +15,37 @@ from .lib import get_world_size, point_sample, get_uncertain_point_coords_with_r
 from .utils.misc import is_dist_avail_and_initialized, nested_tensor_from_tensor_list
 
 
+def sigmoid_focal_loss(inputs, targets, num_masks:float, alpha: float=1, gamma: float=2):
+    """
+    Loss used in RetinaNet for dense detection: https://arxiv.org/abs/1708.02002.
+    Args:
+        inputs: A float tensor of arbitrary shape.
+                The predictions for each example.
+        targets: A float tensor with the same shape as inputs. Stores the binary
+                 classification label for each element in inputs
+                (0 for the negative class and 1 for the positive class).
+        alpha: (optional) Weighting factor in range (0,1) to balance
+                positive vs negative examples. Default = -1 (no weighting).
+        gamma: Exponent of the modulating factor (1 - p_t) to
+               balance easy vs hard examples.
+    Returns:
+        Loss tensor
+    """
+    prob = inputs.sigmoid()
+    ce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
+    p_t = prob * targets + (1 - prob) * (1 - targets)
+    loss = ce_loss * ((1 - p_t) ** gamma)
+
+    if alpha >= 0:
+        alpha_t = alpha * targets + (1 - alpha) * (1 - targets)
+        loss = alpha_t * loss
+
+    return loss.mean(1).sum() / num_masks
+
+sigmoid_focal_loss_jit = torch.jit.script(
+    sigmoid_focal_loss
+)  # type: torch.jit.ScriptModule
+
 def dice_loss(
         inputs: torch.Tensor,
         targets: torch.Tensor,
@@ -116,10 +147,11 @@ class SetCriterion(nn.Module):
         self.oversample_ratio = oversample_ratio
         self.importance_sample_ratio = importance_sample_ratio
 
-        # extra
+        # HEADS UP extra
         self.deep_supervision = deep_supervision
         self.pointwise_mask = pointwise_mask
         if not pointwise_mask:
+            # self.resize_target_ = Resize((64, 64))
             self.resize_target_ = Resize((128, 128))
 
     def loss_labels(self, outputs, targets, indices, num_masks):
@@ -164,7 +196,8 @@ class SetCriterion(nn.Module):
             target_masks_down = self.resize_target_(target_masks).flatten(1)
             src_masks = src_masks.flatten(1)
             losses = {
-            "loss_mask": sigmoid_ce_loss_jit(src_masks, target_masks_down, num_masks),
+            # "loss_mask": sigmoid_ce_loss_jit(src_masks, target_masks_down, num_masks),
+            "loss_mask": sigmoid_focal_loss_jit(src_masks, target_masks_down, num_masks),
             "loss_dice": dice_loss_jit(src_masks, target_masks_down, num_masks),
         }
             del src_masks
@@ -243,7 +276,7 @@ class SetCriterion(nn.Module):
                 {k: torch.cat([all_outputs[frame_idx]["aux_outputs"][aux_idx][k] for frame_idx in all_outputs.keys()]) }
                 for aux_idx in range(len(all_outputs[0]["aux_outputs"]))
                 for k in all_outputs[0]["aux_outputs"][0].keys()
-            ]
+            ] if "aux_outputs" in outputs.keys() else None
         else:
             outputs = all_outputs[0]
 

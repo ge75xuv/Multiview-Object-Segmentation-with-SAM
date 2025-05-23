@@ -16,6 +16,7 @@
             "module": "custom_models.train_sam_copy",
             // "module": "custom_models.train",
             // "module": "custom_models.sam2former_image_predictor",
+            // "module": "custom_models.count_images",
             // "module": "custom_models.models.sam2former.sam2former_builder",
             // "module": "custom_models.models.sam2former.msdeformattn",
             // "args": ["-c models/sam2/sam2/configs/sam2.1_training/sam2.1_hiera_b+_MOSE_finetune.yaml"],

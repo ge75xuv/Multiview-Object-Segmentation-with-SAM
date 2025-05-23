@@ -229,8 +229,8 @@ class SAM2FormerTrain(SAM2FormerBase):
             # HEADS UP, we need the index of the frame but we dont want to repeat it O (object number) many times for the batch size
             # This part is fairly hard to understand but basically we need to select the features in the given frame among
             # (B*L, C, H, W). Since B*L is a flat dimension.
-            img_ids = input.flat_obj_to_img_idx[stage_id]
-            img_ids = img_ids.unique()
+            img_ids_full = input.flat_obj_to_img_idx[stage_id]
+            img_ids = img_ids_full.unique()
             if img_feats_already_computed:
                 # Retrieve image features according to img_ids (if they are already computed).
                 current_vision_feats = [x[:, img_ids] for x in vision_feats]

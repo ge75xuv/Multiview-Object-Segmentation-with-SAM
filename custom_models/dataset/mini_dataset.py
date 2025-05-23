@@ -185,11 +185,17 @@ class MiniDataset(Dataset):
         self.images = np.array(self.images)
         self.segmentation_masks = np.array(self.segmentation_masks)
 
+        # TODO DELETE AFTER
+        with open('./temp/temp.json', 'r') as f:
+            self.indeces = json.load(f)["train_13_15_16"]
+
     def __len__(self):
+        return len(self.indeces)  # TODO DELETE AFTER
         return len(self.segmentation_masks)
 
     def __getitem__(self, index):
         # Get file paths
+        index = self.indeces[index]  # TODO DELETE AFTER
         video_frames = self.images[index]
         video_frames_segmentation_mask = self.segmentation_masks[index]
 
