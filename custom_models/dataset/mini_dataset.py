@@ -186,11 +186,17 @@ class MiniDataset(Dataset):
         self.segmentation_masks = np.array(self.segmentation_masks)
 
         # TODO DELETE AFTER
-        with open('./temp/temp.json', 'r') as f:
-            self.indeces = json.load(f)["train_13_15_16"]
+        if split_type == 'train':
+            self.split_type = split_type
+            with open('../temp/temp.json', 'r') as f:
+                self.indeces = json.load(f)["train_13_15_16"]
+        else:
+            self.indeces = [i for i in range(len(self.images))]
+            self.split_type = split_type
 
     def __len__(self):
-        return len(self.indeces)  # TODO DELETE AFTER
+        if self.split_type == 'train':  # TODO DELETE AFTER
+            return len(self.indeces)
         return len(self.segmentation_masks)
 
     def __getitem__(self, index):

@@ -15,7 +15,7 @@ from .lib import get_world_size, point_sample, get_uncertain_point_coords_with_r
 from .utils.misc import is_dist_avail_and_initialized, nested_tensor_from_tensor_list
 
 
-def sigmoid_focal_loss(inputs, targets, num_masks:float, alpha: float=1, gamma: float=2):
+def sigmoid_focal_loss(inputs, targets, num_masks:float, alpha: float=0.25, gamma: float=2):
     """
     Loss used in RetinaNet for dense detection: https://arxiv.org/abs/1708.02002.
     Args:
