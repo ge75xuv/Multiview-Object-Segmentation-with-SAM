@@ -275,7 +275,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         if return_dict:
             return output_dict
 
-        # Get rid of unnecessary keys in the output_dict
+        # HEADS UP Get rid of unnecessary keys in the output_dict
         used_keys = ['pred_masks', 'pred_masks_high_res', 'pred_logits', 'aux_outputs']
         for key, value in output_dict.items():  # cond_frame_outputs, non_cond_frame_outputs
             for k, v in value.items():  # frame_idx

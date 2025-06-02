@@ -7,23 +7,56 @@
 '''
 The document is slightly adjusted from the SAM2's original code base.
 '''
-
+from dataclasses import dataclass
+from tensordict import tensorclass
 import torch
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from training.utils.data_utils import VideoDatapoint, BatchedVideoDatapoint, BatchedVideoMetaData
 
+@tensorclass
+class MultiviewBatchedVideoDatapoint:
+    """This class represents a batch of videos from 3 views with associated annotations and metadata.
+    Attributes:
+        view1_batchvideo: A BatchedVideoDatapoint instance for the first view.
+        view2_batchvideo: A BatchedVideoDatapoint instance for the second view.
+        view3_batchvideo: A BatchedVideoDatapoint instance for the third view.
+    """
+    view1_batchvideo: BatchedVideoDatapoint
+    view2_batchvideo: BatchedVideoDatapoint
+    view3_batchvideo: BatchedVideoDatapoint
+
+def collate_fn_wrapper(
+    batch: List[Tuple[VideoDatapoint]],
+    num_frames: int = 0,
+    dict_key: Optional[str] = 'all',
+    ) -> MultiviewBatchedVideoDatapoint:
+    """
+    A wrapper function for multiview VideoDataPoint.
+    """
+    # Not multiview case
+    if isinstance(batch[0], VideoDatapoint):
+        return collate_fn(batch, dict_key)
+    
+    # Multiview case
+    assert isinstance(batch[0], list), "Batch should be a list of lists for multiview data."
+    assert len(batch) == 1, "Cannot support batch size > 1 for multiview data."
+    assert len(batch[0]) == 3, "Batch should contain exactly 3 views for multiview data."
+    view_batchvideo = [None, None, None]
+    for idx, bc_view in enumerate(batch[0]):
+        view_batchvideo[idx] = collate_fn([bc_view], dict_key=dict_key)
+    return MultiviewBatchedVideoDatapoint(*view_batchvideo)
 
 def collate_fn(
     batch: List[VideoDatapoint],
+    dict_key: Optional[str] = 'all',
 ) -> BatchedVideoDatapoint:
     """
     Args:
         batch_container: A list of VideoDatapoint instances AND segmentation_masks.
     """
-    frames_segmentation_mask = [bcc[1] for bcc in batch]
-    batch = [bcc[0] for bcc in batch]
-    dict_key = 'all'
+    # frames_segmentation_mask = [bcc[1] for bcc in batch]
+    # batch = [bcc[0] for bcc in batch]
     img_batch = []
     for video in batch:
         img_batch += [torch.stack([frame.data for frame in video.frames], dim=0)]
@@ -80,4 +113,4 @@ def collate_fn(
         ),
         dict_key=dict_key,
         batch_size=[T],
-    ), frames_segmentation_mask
+    )  # , frames_segmentation_mask

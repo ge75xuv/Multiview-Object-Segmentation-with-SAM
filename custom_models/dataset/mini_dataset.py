@@ -22,6 +22,7 @@ class MiniDataset(Dataset):
                  object_labels: List[int],
                  transforms,
                  collate_fn,
+                 multiview:bool=False,
                  batch_size:int=1,
                  num_workers:int=0,
                  **kwargs):
@@ -35,6 +36,7 @@ class MiniDataset(Dataset):
         '''
         super().__init__()
         # Arguments
+        self.multiview = multiview
         self.num_frames = num_frames
         self.batch_size = batch_size
         self.num_workers= num_workers
@@ -67,6 +69,9 @@ class MiniDataset(Dataset):
         # Data containers
         self.images = []
         self.segmentation_masks = []
+        
+        # Include interpolated frames (Experimental)
+        include_interpolated = False
 
         # Iterate over the take folders
         for take_name in split_folder_names:
@@ -97,7 +102,7 @@ class MiniDataset(Dataset):
                     if mask_path.exists():
                         take_images[c_idx].append(rgb_path)
                         take_seg_masks[c_idx].append(mask_path)
-                    elif interpolated_mask_path.exists():
+                    elif interpolated_mask_path.exists() and include_interpolated:
                         take_images[c_idx].append(rgb_path)
                         take_seg_masks[c_idx].append(interpolated_mask_path)
 
@@ -112,35 +117,48 @@ class MiniDataset(Dataset):
                         if simstation_mask_path.exists():
                             take_images[c_idx].append(simstation_rgb_path)
                             take_seg_masks[c_idx].append(simstation_mask_path)
-                        elif simstation_interpolated_mask_path.exists():
+                        elif simstation_interpolated_mask_path.exists() and include_interpolated:
                             take_images[c_idx].append(simstation_rgb_path)
                             take_seg_masks[c_idx].append(simstation_interpolated_mask_path)
 
             # Create video frames, for now we dont care about the views
             end_frame_idx = len(take_images[1]) if len(take_images[1]) != 0 else len(take_images[0])
-            assert len(take_images[1]) == len(take_images[4]) == len(take_images[5]), "The number of frames in the cameras are not equal!"
-            assert len(take_images[0]) == len(take_images[2]) == len(take_images[3]), "The number of frames in the cameras are not equal!"
+            try:
+                assert len(take_images[1]) == len(take_images[4]) == len(take_images[5]), "The number of frames in the cameras are not equal!"
+                assert len(take_images[0]) == len(take_images[2]) == len(take_images[3]), "The number of frames in the cameras are not equal!"
+            except AssertionError as e:
+                assert not include_interpolated, "The number of frames in the cameras are not equal!"
+                print(f"Interpolated frames are not included! {e}")
 
             # Define Slices
             start_idx = [i for i in range(0, end_frame_idx, num_frames)]
             end_idx = [i for i in range(num_frames, end_frame_idx+num_frames, num_frames)]
 
             # Slice the images from the take_images and take_seg_masks
-            # TODO for multiview, we should put videos after each other
             if num_frames == 1:    
                 take_video = [take_images[k][ii:jj] for ii, jj in zip(start_idx, end_idx) for k in take_images.keys() if len(take_images[k]) != 0]
                 take_video_seg_mask = [take_seg_masks[k][ii:jj] for ii, jj in zip(start_idx, end_idx) for k in take_seg_masks.keys() if len(take_seg_masks[k]) != 0]
-            else:
-                take_video = [take_images[k][ii:jj] for k in take_images.keys() for ii, jj in zip(start_idx, end_idx) if len(take_images[k]) != 0]
-                take_video_seg_mask = [take_seg_masks[k][ii:jj] for k in take_seg_masks.keys() for ii, jj in zip(start_idx, end_idx) if len(take_seg_masks[k]) != 0]
+            elif num_frames > 1:
+                take_video = {k: [take_images[k][ii:jj] for ii, jj in zip(start_idx, end_idx)] for k in take_images.keys() if len(take_images[k]) != 0}
+                take_video = [frames for frames in take_video.values() if len(frames) > 0]  # Convert dict to list
+                take_video = [frames for time_group in zip(*take_video) for frames in time_group]  # Interleave the frames from different cameras
+                take_video_seg_mask = {k: [take_seg_masks[k][ii:jj] for ii, jj in zip(start_idx, end_idx)] for k in take_seg_masks.keys() if len(take_seg_masks[k]) != 0}
+                take_video_seg_mask = [frames for frames in take_video_seg_mask.values() if len(frames) > 0]  # Convert dict to list
+                take_video_seg_mask = [frames for time_group in zip(*take_video_seg_mask) for frames in time_group]  # Interleave the frames from different cameras
 
             # Be sure we take every frame
-            if len(take_images[1]) != 0:
-                assert (take_video[-1][-1] == take_images[5][-1]
-                        ), "The last frame of the video is not the last frame of the take!"
-            else:
-                assert (take_video[-1][-1] == take_images[3][-1]
-                        ), "The last frame of the video is not the last frame of the take!"
+            try:
+                if len(take_images[1]) != 0:
+                    last_video_frame = take_video[-1][-1] if len(take_video[-1]) > 0 else take_video[-2][-1]
+                    assert (last_video_frame == take_images[5][-1]
+                            ), "The last frame of the video is not the last frame of the take!"
+                else:
+                    last_video_frame = take_video[-1][-1] if len(take_video[-1]) > 0 else take_video[-2][-1]
+                    assert (last_video_frame == take_images[3][-1]
+                            ), "The last frame of the video is not the last frame of the take!"
+            except:
+                assert not include_interpolated, "The last frame of the video is not the last frame of the take!"
+                print(f"Last frame assertion failed due to exclusion of the interpolated frames!")
 
             # Remove the uncomplete videos (Essential for converting to numpy)
             take_video = [im for im in take_video if len(im) == num_frames]
@@ -186,38 +204,49 @@ class MiniDataset(Dataset):
         self.segmentation_masks = np.array(self.segmentation_masks)
 
         # TODO DELETE AFTER
-        if split_type == 'train':
-            self.split_type = split_type
-            with open('../temp/temp.json', 'r') as f:
-                self.indeces = json.load(f)["train_13_15_16"]
-        else:
-            self.indeces = [i for i in range(len(self.images))]
-            self.split_type = split_type
+        # self.small_onject_refinement = False
+        # if split_type == 'train' and self.small_onject_refinement:
+        #     self.split_type = split_type
+        #     with open('./temp/train_13_15_no_interp.json', 'r') as f:
+        #         self.indeces = json.load(f)["train_13_15"]
+        # else:
+        #     self.indeces = [i for i in range(len(self.images))]
+        #     self.split_type = split_type
 
     def __len__(self):
-        if self.split_type == 'train':  # TODO DELETE AFTER
-            return len(self.indeces)
+        # if self.split_type == 'train' and self.small_onject_refinement:  # TODO DELETE AFTER
+        #     return len(self.indeces)
+        if self.multiview:
+            return len(self.segmentation_masks) // 3
         return len(self.segmentation_masks)
 
     def __getitem__(self, index):
         # Get file paths
-        index = self.indeces[index]  # TODO DELETE AFTER
-        video_frames = self.images[index]
-        video_frames_segmentation_mask = self.segmentation_masks[index]
+        # index = self.indeces[index] if self.small_onject_refinement else index  # TODO DELETE AFTER
+        indeces = index * 3 + np.array([0, 1, 2]) if self.multiview else [index]
+        img_view_container = []
+        seg_mask_view_container = []
+        for index in indeces:
+            video_frames = self.images[index]
+            video_frames_segmentation_mask = self.segmentation_masks[index]
 
-        # Open the images and process (resizing to input size, padding, etc.)
-        frame_obj_list, frames_segmentation_mask = self._open_and_process(video_frames, video_frames_segmentation_mask)
+            # Open the images and process (resizing to input size, padding, etc.)
+            frame_obj_list, frames_segmentation_mask = self._open_and_process(video_frames, video_frames_segmentation_mask)
 
-        # Create the VideoDatapoint
-        size_x_y = frame_obj_list[0].data.shape[-2:]
-        video_datapoint = VideoDatapoint(frame_obj_list, index, size_x_y)
+            # Create the VideoDatapoint
+            size_x_y = frame_obj_list[0].data.shape[-2:]
+            video_datapoint = VideoDatapoint(frame_obj_list, index, size_x_y)
 
-        # Apply transforms
-        for transform in self.transforms_:
-            video_datapoint = transform(video_datapoint)
-        if self.get_seg_mask:
-            return video_datapoint, frames_segmentation_mask
-        return video_datapoint
+            # Apply transforms
+            for transform in self.transforms_:
+                video_datapoint = transform(video_datapoint)
+
+            # Append the video datapoint to the container
+            img_view_container.append(video_datapoint)
+
+        if not self.multiview:
+            return img_view_container[0]
+        return img_view_container
 
     def _open_and_process(self, video_frames, video_frames_segmentation_mask):
         frame_obj_list = []

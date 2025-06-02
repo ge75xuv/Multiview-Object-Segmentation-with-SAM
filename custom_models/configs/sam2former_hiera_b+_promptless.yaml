@@ -2,12 +2,13 @@
 
 scratch:
   resolution: 512
-  train_batch_size: 2
+  train_batch_size: 1
   num_train_workers: 1
   base_lr: 1.0e-6  # 5.0e-6
   vision_lr: 1.0e-6  # 3.0e-06
   obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29]
   num_frames: 1
+  multiview: True
   max_epochs: 45
   # Decoder
   num_queries: 23
@@ -251,9 +252,12 @@ trainer:
       object_labels: ${scratch.obj_labels}
       transforms: ${vos.train_transforms}
       num_workers: ${scratch.num_train_workers}
+      multiview: ${scratch.multiview}
       collate_fn:
-        _target_: training.utils.data_utils.collate_fn
+        # _target_: training.utils.data_utils.collate_fn
+        _target_: custom_models.dataset.collate_fn.collate_fn_wrapper
         _partial_: true
+        num_frames: ${scratch.num_frames}
         dict_key: all
     val:
       _target_: custom_models.dataset.mini_dataset.MiniDataset
@@ -264,9 +268,12 @@ trainer:
       object_labels: ${scratch.obj_labels}
       transforms: ${vos.train_transforms}
       num_workers: ${scratch.num_train_workers}
+      multiview: ${scratch.multiview}
       collate_fn:
-        _target_: training.utils.data_utils.collate_fn
+        # _target_: training.utils.data_utils.collate_fn
+        _target_: custom_models.dataset.collate_fn.collate_fn_wrapper
         _partial_: true
+        num_frames: ${scratch.num_frames}
         dict_key: val
 
   optim:
@@ -384,7 +391,7 @@ trainer:
   # initialize from a SAM 2 checkpoint
   checkpoint:
     # NOTE: HEADS UP 
-    resume_from: sam2_logs/04_28_00_50/checkpoints/checkpoint_33.pt
+    resume_from: sam2_logs/05_24_10_21/checkpoints/checkpoint_34.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
     save_freq: 1 # 0 only last checkpoint is saved.
     model_weight_initializer:
