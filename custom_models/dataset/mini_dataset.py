@@ -12,6 +12,7 @@ from training.utils.data_utils import Object, Frame, VideoDatapoint
 from tqdm import tqdm
 
 from custom_models.helpers.configurations import *
+from custom_models.helpers.load_camera_data import load_camera_data
 
 class MiniDataset(Dataset):
     
@@ -69,9 +70,10 @@ class MiniDataset(Dataset):
         # Data containers
         self.images = []
         self.segmentation_masks = []
+        self.camera_features = {}
         
         # Include interpolated frames (Experimental)
-        include_interpolated = False
+        include_interpolated = True
 
         # Iterate over the take folders
         for take_name in split_folder_names:
@@ -120,6 +122,19 @@ class MiniDataset(Dataset):
                         elif simstation_interpolated_mask_path.exists() and include_interpolated:
                             take_images[c_idx].append(simstation_rgb_path)
                             take_seg_masks[c_idx].append(simstation_interpolated_mask_path)
+
+            # TODO Load the camera intrinsics and extrinsics (Do it here to see what camera to load)
+            # NOTE Multiview is experimental and tested with azure cameras only
+            if self.multiview:
+                camera_files = ['camera01.json', 'camera04.json', 'camera05.json']
+                # camera_files = [f'camera0{c_idx}.json' for c_idx in [1, 4, 5]] if flag_simstation else [f'camera0{c_idx}.json' for c_idx in [0, 2, 3]]
+                camera_int_ext = []
+                for json_file in camera_files:
+                    with open(os.path.join(take_path, json_file), 'r') as f:
+                        camera_data = json.load(f)
+                    intr, ext, padding, dist, depth_ext = load_camera_data(camera_data, scaling_factor)
+                    camera_int_ext.append((intr, ext))
+                    self.camera_features[take_folder] = camera_int_ext
 
             # Create video frames, for now we dont care about the views
             end_frame_idx = len(take_images[1]) if len(take_images[1]) != 0 else len(take_images[0])

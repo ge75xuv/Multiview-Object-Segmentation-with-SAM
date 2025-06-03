@@ -28,6 +28,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         image_encoder,
         memory_attention=None,
         memory_encoder=None,
+        multiview=False,
         prob_to_use_pt_input_for_train=0.0,
         prob_to_use_pt_input_for_eval=0.0,
         prob_to_use_box_input_for_train=0.0,
@@ -110,9 +111,17 @@ class SAM2FormerTrain(SAM2FormerBase):
             # HEADS UP
             for p in self.sam_mask_decoder.parameters():
                 p.requires_grad = False
+        self.multiview = multiview
 
     def forward(self, input: BatchedVideoDatapoint):
-        if self.training or not self.forward_backbone_per_frame_for_eval:
+        if False and self.multiview:
+            input_view = input.get("view1_batchvideo", None)
+            input_view2 = input.get("view2_batchvideo", None)
+            input_view3 = input.get("view3_batchvideo", None)
+            backbone_out = self.forward_image(input_view.flat_img_batch)
+            backbone_out2 = self.forward_image(input_view2.flat_img_batch)
+            backbone_out3 = self.forward_image(input_view3.flat_img_batch)
+        if not self.multiview and (self.training or not self.forward_backbone_per_frame_for_eval):
             # precompute image features on all frames before tracking
             # input.img_batch.shape = (num_frames, B, 3, H, W)
             # input.flat_img_batch = (B * num_frames, 3, H, W)
@@ -224,53 +233,55 @@ class SAM2FormerTrain(SAM2FormerBase):
             "cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
             "non_cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
         }
+        view_inputs = [input[idx] for idx in range(1,4)] if self.multiview else [input]
         for stage_id in processing_order:
-            # Get the image features for the current frames
-            # HEADS UP, we need the index of the frame but we dont want to repeat it O (object number) many times for the batch size
-            # This part is fairly hard to understand but basically we need to select the features in the given frame among
-            # (B*L, C, H, W). Since B*L is a flat dimension.
-            img_ids_full = input.flat_obj_to_img_idx[stage_id]
-            img_ids = img_ids_full.unique()
-            if img_feats_already_computed:
-                # Retrieve image features according to img_ids (if they are already computed).
-                current_vision_feats = [x[:, img_ids] for x in vision_feats]
-                current_vision_pos_embeds = [x[:, img_ids] for x in vision_pos_embeds]
-            else:
-                # Otherwise, compute the image features on the fly for the given img_ids
-                # (this might be used for evaluation on long videos to avoid backbone OOM).
-                (
-                    _,
-                    current_vision_feats,
-                    current_vision_pos_embeds,
-                    feat_sizes,
-                ) = self._prepare_backbone_features_per_frame(
-                    input.flat_img_batch, img_ids
-                )
+            for view_idx, input in enumerate(view_inputs):
+                # Get the image features for the current frames
+                # HEADS UP, we need the index of the frame but we dont want to repeat it O (object number) many times for the batch size
+                # This part is fairly hard to understand but basically we need to select the features in the given frame among
+                # (B*L, C, H, W). Since B*L is a flat dimension.
+                img_ids_full = input.flat_obj_to_img_idx[stage_id]
+                img_ids = img_ids_full.unique()
+                if img_feats_already_computed:
+                    # Retrieve image features according to img_ids (if they are already computed).
+                    current_vision_feats = [x[:, img_ids] for x in vision_feats]
+                    current_vision_pos_embeds = [x[:, img_ids] for x in vision_pos_embeds]
+                else:
+                    # Otherwise, compute the image features on the fly for the given img_ids
+                    # (this might be used for evaluation on long videos to avoid backbone OOM).
+                    (
+                        _,
+                        current_vision_feats,
+                        current_vision_pos_embeds,
+                        feat_sizes,
+                    ) = self._prepare_backbone_features_per_frame(
+                        input.flat_img_batch, img_ids
+                    )
 
-            # Get output masks based on this frame's prompts and previous memory
-            current_out = self.track_step(
-                frame_idx=stage_id,
-                is_init_cond_frame=stage_id in init_cond_frames,
-                current_vision_feats=current_vision_feats,
-                current_vision_pos_embeds=current_vision_pos_embeds,
-                feat_sizes=feat_sizes,
-                # point_inputs=backbone_out["point_inputs_per_frame"].get(stage_id, None),
-                # mask_inputs=backbone_out["mask_inputs_per_frame"].get(stage_id, None),
-                # gt_masks=backbone_out["gt_masks_per_frame"].get(stage_id, None),
-                # frames_to_add_correction_pt=frames_to_add_correction_pt,
-                output_dict=output_dict,
-                num_frames=num_frames,
-                run_mem_encoder=True if num_frames > 1 else False,
-            )
-            # Append the output, depending on whether it's a conditioning frame
-            add_output_as_cond_frame = stage_id in init_cond_frames or (
-                self.add_all_frames_to_correct_as_cond
-                # and stage_id in frames_to_add_correction_pt
-            )
-            if add_output_as_cond_frame:
-                output_dict["cond_frame_outputs"][stage_id] = current_out
-            else:
-                output_dict["non_cond_frame_outputs"][stage_id] = current_out
+                # Get output masks based on this frame's prompts and previous memory
+                current_out = self.track_step(
+                    frame_idx=stage_id,
+                    is_init_cond_frame=stage_id in init_cond_frames,
+                    current_vision_feats=current_vision_feats,
+                    current_vision_pos_embeds=current_vision_pos_embeds,
+                    feat_sizes=feat_sizes,
+                    # point_inputs=backbone_out["point_inputs_per_frame"].get(stage_id, None),
+                    # mask_inputs=backbone_out["mask_inputs_per_frame"].get(stage_id, None),
+                    # gt_masks=backbone_out["gt_masks_per_frame"].get(stage_id, None),
+                    # frames_to_add_correction_pt=frames_to_add_correction_pt,
+                    output_dict=output_dict,
+                    num_frames=num_frames,
+                    run_mem_encoder=True if num_frames > 1 else False,
+                )
+                # Append the output, depending on whether it's a conditioning frame
+                add_output_as_cond_frame = stage_id in init_cond_frames or (
+                    self.add_all_frames_to_correct_as_cond
+                    # and stage_id in frames_to_add_correction_pt
+                )
+                if add_output_as_cond_frame:
+                    output_dict["cond_frame_outputs"][stage_id] = current_out
+                else:
+                    output_dict["non_cond_frame_outputs"][stage_id] = current_out
 
         if return_dict:
             return output_dict

@@ -26,6 +26,26 @@ class MultiviewBatchedVideoDatapoint:
     view2_batchvideo: BatchedVideoDatapoint
     view3_batchvideo: BatchedVideoDatapoint
 
+    def __getitem__(self, idx: int) -> BatchedVideoDatapoint:
+        """
+        Allows indexing into the multiview batch to get a specific view's BatchedVideoDatapoint.
+        """
+        if idx == 1:
+            return self.view1_batchvideo
+        elif idx == 2:
+            return self.view2_batchvideo
+        elif idx == 3:
+            return self.view3_batchvideo
+        else:
+            raise IndexError("Index out of range for multiview batch.")
+
+    @property
+    def num_frames(self) -> int:
+        """
+        Returns the number of frames per video.
+        """
+        return self.view1_batchvideo.batch_size[0]
+
 def collate_fn_wrapper(
     batch: List[Tuple[VideoDatapoint]],
     num_frames: int = 0,

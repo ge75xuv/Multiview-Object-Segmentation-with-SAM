@@ -7,7 +7,7 @@ scratch:
   base_lr: 1.0e-6  # 5.0e-6
   vision_lr: 1.0e-6  # 3.0e-06
   obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29]
-  num_frames: 1
+  num_frames: 2
   multiview: True
   max_epochs: 45
   # Decoder
@@ -73,6 +73,7 @@ trainer:
     _target_: custom_models.models.sam2former.sam2former_train.SAM2FormerTrain
     freeze_image_encoder: True
     freeze_sam_mask_decoder: False
+    multiview: ${scratch.multiview}
     image_encoder:
       _target_: sam2.modeling.backbones.image_encoder.ImageEncoder
       scalp: 1
