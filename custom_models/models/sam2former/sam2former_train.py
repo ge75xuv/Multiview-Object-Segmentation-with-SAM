@@ -114,13 +114,6 @@ class SAM2FormerTrain(SAM2FormerBase):
         self.multiview = multiview
 
     def forward(self, input: BatchedVideoDatapoint):
-        if False and self.multiview:
-            input_view = input.get("view1_batchvideo", None)
-            input_view2 = input.get("view2_batchvideo", None)
-            input_view3 = input.get("view3_batchvideo", None)
-            backbone_out = self.forward_image(input_view.flat_img_batch)
-            backbone_out2 = self.forward_image(input_view2.flat_img_batch)
-            backbone_out3 = self.forward_image(input_view3.flat_img_batch)
         if not self.multiview and (self.training or not self.forward_backbone_per_frame_for_eval):
             # precompute image features on all frames before tracking
             # input.img_batch.shape = (num_frames, B, 3, H, W)

@@ -108,6 +108,10 @@ class MiniDataset(Dataset):
                         take_images[c_idx].append(rgb_path)
                         take_seg_masks[c_idx].append(interpolated_mask_path)
 
+                # Break if the azure images are not available in the multiview run
+                if len(take_seg_masks[1]) == 0 and self.multiview:
+                    break
+
                 # assume azure is not available, use simstation instead
                 if len(take_seg_masks[1]) == 0:
                     assert flag_simstation, "The azure file should not exist!"
@@ -123,9 +127,10 @@ class MiniDataset(Dataset):
                             take_images[c_idx].append(simstation_rgb_path)
                             take_seg_masks[c_idx].append(simstation_interpolated_mask_path)
 
-            # TODO Load the camera intrinsics and extrinsics (Do it here to see what camera to load)
             # NOTE Multiview is experimental and tested with azure cameras only
-            if self.multiview:
+            if self.multiview and flag_simstation:
+                break
+            elif self.multiview:
                 camera_files = ['camera01.json', 'camera04.json', 'camera05.json']
                 # camera_files = [f'camera0{c_idx}.json' for c_idx in [1, 4, 5]] if flag_simstation else [f'camera0{c_idx}.json' for c_idx in [0, 2, 3]]
                 camera_int_ext = []
@@ -240,7 +245,7 @@ class MiniDataset(Dataset):
         # index = self.indeces[index] if self.small_onject_refinement else index  # TODO DELETE AFTER
         indeces = index * 3 + np.array([0, 1, 2]) if self.multiview else [index]
         img_view_container = []
-        seg_mask_view_container = []
+        take_name = str(self.images[indeces[0]][0]).split('/')[-3]  # View Index:0 Frame Index:0
         for index in indeces:
             video_frames = self.images[index]
             video_frames_segmentation_mask = self.segmentation_masks[index]
@@ -261,7 +266,7 @@ class MiniDataset(Dataset):
 
         if not self.multiview:
             return img_view_container[0]
-        return img_view_container
+        return img_view_container, self.camera_features[take_name]
 
     def _open_and_process(self, video_frames, video_frames_segmentation_mask):
         frame_obj_list = []

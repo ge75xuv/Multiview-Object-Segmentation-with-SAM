@@ -4,8 +4,8 @@ from scipy.spatial.transform import Rotation
 def load_camera_data(camera_data, downscale=1):
     h, w = camera_data['value0']['color_parameters']['height'], camera_data['value0']['color_parameters']['width']
     h_, w_ = h // downscale, w // downscale
-    # padding = (w_ - h_) // 2
-    padding = 0
+    padding = (w_ - h_) // 2
+    # padding = 0
     intrinsics_json = camera_data['value0']['color_parameters']['intrinsics_matrix']
     K = np.asarray([[intrinsics_json['m00'] / downscale, intrinsics_json['m10'], intrinsics_json['m20'] / downscale],
                     [intrinsics_json['m01'], intrinsics_json['m11'] / downscale, intrinsics_json['m21'] / downscale + padding],
