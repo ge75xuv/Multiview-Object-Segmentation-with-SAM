@@ -41,13 +41,13 @@ def epipolar_mask_preprocess(
     ):
     # Another reason for us to use temporality. It is not possible to make a differentiable masking here
     y, x = torch.where(mask_cam0.sigmoid() > 0.5)  # Is torch where a problem for the gradients? Yes
-    pts_cam0 = torch.cat([x.unsqueeze(1), y.unsqueeze(1)], dim=1).numpy()[0:num_points_idx]
+    pts_cam0 = torch.cat([x.unsqueeze(1), y.unsqueeze(1)], dim=1)[0:num_points_idx] if len(x) > 0 else None
 
     y, x = torch.where(mask_cam1.sigmoid() > 0.5)  # Is torch where a problem for the gradients? Yes
-    pts_cam1 = torch.cat([x.unsqueeze(1), y.unsqueeze(1)], dim=1).numpy()[0:num_points_idx]
+    pts_cam1 = torch.cat([x.unsqueeze(1), y.unsqueeze(1)], dim=1)[0:num_points_idx] if len(x) > 0 else None
 
     y, x = torch.where(mask_cam2.sigmoid() > 0.5)  # Is torch where a problem for the gradients? Yes
-    pts_cam2 = torch.cat([x.unsqueeze(1), y.unsqueeze(1)], dim=1).numpy()[0:num_points_idx]
+    pts_cam2 = torch.cat([x.unsqueeze(1), y.unsqueeze(1)], dim=1)[0:num_points_idx] if len(x) > 0 else None
     return pts_cam0, pts_cam1, pts_cam2
 
 def epipolar_mask(
@@ -77,14 +77,14 @@ def epipolar_mask(
     ext_1_to_2 = inv2 @ ext1
     
     # Compute epipolar lines
-    epi_lines_1_to_0 = compute_epipolar_lines(ext_1_to_0, K0, K1, pts_cam1)
-    epi_lines_2_to_0 = compute_epipolar_lines(ext_2_to_0, K0, K2, pts_cam2)
+    epi_lines_1_to_0 = compute_epipolar_lines(ext_1_to_0, K0, K1, pts_cam1) if pts_cam1 is not None else None
+    epi_lines_2_to_0 = compute_epipolar_lines(ext_2_to_0, K0, K2, pts_cam2) if pts_cam2 is not None else None
 
-    epi_lines_0_to_1 = compute_epipolar_lines(ext_0_to_1, K1, K0, pts_cam0)
-    epi_lines_2_to_1 = compute_epipolar_lines(ext_2_to_1, K1, K2, pts_cam2)
+    epi_lines_0_to_1 = compute_epipolar_lines(ext_0_to_1, K1, K0, pts_cam0) if pts_cam0 is not None else None
+    epi_lines_2_to_1 = compute_epipolar_lines(ext_2_to_1, K1, K2, pts_cam2) if pts_cam2 is not None else None
 
-    epi_lines_0_to_2 = compute_epipolar_lines(ext_0_to_2, K2, K0, pts_cam0)
-    epi_lines_1_to_2 = compute_epipolar_lines(ext_1_to_2, K2, K1, pts_cam1)
+    epi_lines_0_to_2 = compute_epipolar_lines(ext_0_to_2, K2, K0, pts_cam0) if pts_cam0 is not None else None
+    epi_lines_1_to_2 = compute_epipolar_lines(ext_1_to_2, K2, K1, pts_cam1) if pts_cam1 is not None else None
 
     # Put the lines in the form ax + by + c = 0
     skip = 1
@@ -100,4 +100,10 @@ def epipolar_mask(
         else:
             curr_point = intersection(a[i:i+1], b[i:i+1], c[i:i+1], k, l, m)
             intersect_point = np.concatenate((intersect_point, curr_point), axis=0)
+
+
+if __name__ == '__main__':
+    import json
+    with open('../../temp/predictions.json', 'r') as f:
+        predictions = json.load(f)
     
