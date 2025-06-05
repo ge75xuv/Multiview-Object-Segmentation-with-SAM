@@ -22,7 +22,7 @@ def compute_epipolar_lines(ext, K_line, K_pt, pts1):
     return lines2
 
 def compute_inverse_transformation(ext):
-    inv = np.zeros((4, 4), dtype=np.float32)
+    inv = torch.zeros((4, 4), dtype=torch.float32)
     inv[:3, :3] = ext[:3,:3].T
     inv[:3, 3] = -ext[:3,:3].T @ ext[:3, 3]
     return inv
@@ -104,6 +104,32 @@ def epipolar_mask(
 
 if __name__ == '__main__':
     import json
-    with open('../../temp/predictions.json', 'r') as f:
+
+    # Load predictions and camera intrinsics/extrinsics
+    with open('./temp/predictions.json', 'r') as f:
         predictions = json.load(f)
-    
+    with open('./temp/camera_int_ext.json', 'r') as f:
+        camera_int_ext_json = json.load(f)
+
+    # Reshape the logits
+    pred_class = torch.Tensor(predictions['pred_logits']).softmax(dim=-1).argmax(dim=-1)
+    index_10 = torch.where(pred_class == 10)
+    cam0_idx = index_10[1][2]  # It is a tuple of batch index and class index, so we need to access the second element
+    cam1_idx = index_10[1][3]
+    cam2_idx = index_10[1][4]
+
+    # Get the masks for the first three cameras
+    # NOTE by visial observation, we know that the first camera is the 3rd in the batch
+    mask_cam0 = torch.Tensor(predictions['pred_masks_high_res'][2][cam0_idx])
+    mask_cam1 = torch.Tensor(predictions['pred_masks_high_res'][3][cam1_idx])
+    mask_cam2 = torch.Tensor(predictions['pred_masks_high_res'][4][cam2_idx])
+
+    # Preprocess the masks to get points
+    pts_cam0, pts_cam1, pts_cam2 = epipolar_mask_preprocess(mask_cam0, mask_cam1, mask_cam2, num_points_idx=100)
+
+    # Convert camera intrinsics and extrinsics to tensors
+    camera_int_ext = [(torch.tensor(cam[0]), torch.tensor(cam[1])) for cam in camera_int_ext_json.values()]
+
+    # Run the epipolar mask function
+    intersect_points = epipolar_mask(camera_int_ext, pts_cam0, pts_cam1, pts_cam2)
+    print("Intersection Points:", intersect_points)
