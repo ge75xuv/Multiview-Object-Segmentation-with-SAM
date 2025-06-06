@@ -1,15 +1,35 @@
+#%%
 from typing import List, Tuple, Optional, Dict
 
+import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-OBJECTS_EPIPOLAR = [10, 12]
+# OBJECTS_EPIPOLAR = [10, 12]
+OBJECTS_EPIPOLAR = [10]
 
 VIEW_COMBINATIONS = {
     0: ["epi_lines_1_to_0", "epi_lines_2_to_0"],
     1: ["epi_lines_0_to_1", "epi_lines_2_to_1"],
     2: ["epi_lines_0_to_2", "epi_lines_1_to_2"],
 }
+
+def draw_epilines(img2, lines, padding=0):
+    num_points = lines.shape[0]
+    colors = plt.cm.jet(np.linspace(0, 1, num_points))[:, :] * 255  # RGB 0-255
+    colors = colors.astype(np.uint8)
+    h, w = img2.shape[:2]
+    for r, color in zip(lines, colors):
+        color = color.tolist() if isinstance(color, np.ndarray) else color
+        # a, b, c = r
+        # x0, x1 = 0, w
+        # y0 = int((-c - a * x0) / b)
+        # y1 = int((-c - a * x1) / b)
+        x0,y0 = map(int, [0, -(r[2])/r[1] - padding])
+        x1,y1 = map(int, [w, -(r[2] + r[0]*w)/r[1] - padding])
+        img2 = cv2.line(img2, (x0, y0), (x1, y1), color, 2)
+    return img2
 
 def skew(t):
     return torch.tensor([
@@ -46,7 +66,7 @@ def single_epiline(_size: Tuple[int, int], lines: torch.Tensor):
     step = 10  # Step size for sampling points along the epipolar line
     h, w = _size
     eval_func = lambda x: (-lines[:, 2] - lines[:, 0] * x) / lines[:, 1]
-    pts = torch.tensor([(x, y) for x in range(0, w, step) for y in eval_func(x, lines) if y >= 0 and y <= h])
+    pts = torch.tensor([(x, y) for x in range(0, w, step) for y in eval_func(x) if y >= 0 and y <= h])
     return pts
 
 @torch.no_grad()
@@ -57,6 +77,8 @@ def epipolar_mask_preprocess(
     num_points_idx: Optional[int] = -1,
     ):
     # Another reason for us to use temporality. It is not possible to make a differentiable masking here
+    # The batch operation for different objects cannot be done here since the size of the masks are going to be carying
+    # pts_cam = torch.Tensor([torch.cat((x[bs==bs_idx, None], y[bs==bs_idx, None])) for bs_idx in torch.unique(bs)])
     y, x = torch.where(mask_cam0.sigmoid() > 0.5)  # Is torch where a problem for the gradients? Yes
     pts_cam0 = torch.cat([x.unsqueeze(1), y.unsqueeze(1)], dim=1)[0:num_points_idx] if len(x) > 0 else None
 
@@ -66,6 +88,16 @@ def epipolar_mask_preprocess(
     y, x = torch.where(mask_cam2.sigmoid() > 0.5)  # Is torch where a problem for the gradients? Yes
     pts_cam2 = torch.cat([x.unsqueeze(1), y.unsqueeze(1)], dim=1)[0:num_points_idx] if len(x) > 0 else None
     return pts_cam0, pts_cam1, pts_cam2
+
+def epipolar_mask_post_process(
+    epi_masks_for_views: Dict[int, Tuple[torch.Tensor, float]],
+    _size: Tuple[int, int],
+):
+    mask = torch.zeros([3, _size[0], _size[1]], dtype=torch.float32)
+    mask[0, epi_masks_for_views[0][0].T.long()] = epi_masks_for_views[0][1]
+    mask[1, epi_masks_for_views[1][0].T.long()] = epi_masks_for_views[1][1]
+    mask[2, epi_masks_for_views[2][0].T.long()] = epi_masks_for_views[2][1]
+    return mask
 
 def epipolar_mask(
     camera_int_ext: List[torch.Tensor],
@@ -94,7 +126,7 @@ def epipolar_mask(
 
     ext_0_to_2 = inv2 @ ext0
     ext_1_to_2 = inv2 @ ext1
-    
+
     # Compute epipolar lines
     epi_lines_1_to_0 = compute_epipolar_lines(ext_1_to_0, K0, K1, pts_cam1) if pts_cam1 is not None else None
     epi_lines_2_to_0 = compute_epipolar_lines(ext_2_to_0, K0, K2, pts_cam2) if pts_cam2 is not None else None
@@ -105,8 +137,11 @@ def epipolar_mask(
     epi_lines_0_to_2 = compute_epipolar_lines(ext_0_to_2, K2, K0, pts_cam0) if pts_cam0 is not None else None
     epi_lines_1_to_2 = compute_epipolar_lines(ext_1_to_2, K2, K1, pts_cam1) if pts_cam1 is not None else None
 
+    # NOTE: DEBUG
+    test_img1 = draw_epilines(np.zeros((_size[0], _size[1], 1)), epi_lines_1_to_0, padding=0)
+    test_img2 = draw_epilines(np.zeros((_size[0], _size[1], 1)), epi_lines_2_to_0, padding=0)
+
     # Put the lines in the form ax + by + c = 0
-    # NOTE there can be a batch computation until here. Then for loop over the batch
     skip = 1
     epi_masks_for_views = {}
     for view in [0, 1, 2]:
@@ -138,42 +173,65 @@ def epipolar_mask(
                            _first_epi_lines if _first_epi_lines is not None else _second_epi_lines
                         )
             epi_masks_for_views[view] = intersect_point, _case_weights[1]
-    return epi_masks_for_views
+    return epi_masks_for_views, test_img1, test_img2
 
 
 if __name__ == '__main__':
     import json
 
     # Load predictions and camera intrinsics/extrinsics
-    with open('./temp/predictions.json', 'r') as f:
-        predictions = json.load(f)
-    with open('./temp/camera_int_ext.json', 'r') as f:
-        camera_int_ext_json = json.load(f)
+    try:
+        with open('./temp/predictions.json', 'r') as f:
+            predictions = json.load(f)
+        with open('./temp/camera_int_ext.json', 'r') as f:
+            camera_int_ext_json = json.load(f)
+    except FileNotFoundError:
+        with open('../../../temp/predictions.json', 'r') as f:
+            predictions = json.load(f)
+        with open('../../../temp/camera_int_ext.json', 'r') as f:
+            camera_int_ext_json = json.load(f)
+
+    # Convert camera intrinsics and extrinsics to tensors
+    camera_int_ext = [(torch.tensor(cam[0]), torch.tensor(cam[1])) for cam in camera_int_ext_json.values()]
 
     # Reshape the logits
     pred_class = torch.Tensor(predictions['pred_logits']).softmax(dim=-1).argmax(dim=-1)
     for obj_idx in OBJECTS_EPIPOLAR:
         index_10 = torch.where(pred_class == obj_idx)
-        cam0_idx = index_10[1][2]  # It is a tuple of batch index and class index, 
-        cam1_idx = index_10[1][3]  # so we need to access the second element
-        cam2_idx = index_10[1][4]
+        cam0_ids = index_10[1][2]  # It is a tuple of batch index and class index, 
+        cam1_ids = index_10[1][3]  # so we need to access the second element
+        cam2_ids = index_10[1][4]
 
-    # Get the masks for the first three cameras
-    # NOTE by visial observation, we know that the first camera is the 3rd in the batch
-    mask_cam0 = torch.Tensor(predictions['pred_masks_high_res'][2][cam0_idx])
-    mask_cam1 = torch.Tensor(predictions['pred_masks_high_res'][3][cam1_idx])
-    mask_cam2 = torch.Tensor(predictions['pred_masks_high_res'][4][cam2_idx])
+        # Get the masks for the first three cameras
+        # NOTE by visial observation, we know that the first camera is the 3rd in the batch
+        mask_cam0 = torch.Tensor(predictions['pred_masks_high_res'][2])[cam0_ids, :, :]  # Slice the correct objects
+        mask_cam1 = torch.Tensor(predictions['pred_masks_high_res'][3])[cam1_ids, :, :]  # from the indeces
+        mask_cam2 = torch.Tensor(predictions['pred_masks_high_res'][4])[cam2_ids, :, :]
 
-    # Preprocess the masks to get points
-    pts_cam0, pts_cam1, pts_cam2 = epipolar_mask_preprocess(mask_cam0, mask_cam1, mask_cam2, num_points_idx=100)
+        # Preprocess the masks to get points
+        pts_cam0, pts_cam1, pts_cam2 = epipolar_mask_preprocess(mask_cam0, mask_cam1, mask_cam2, num_points_idx=100)
 
-    # Convert camera intrinsics and extrinsics to tensors
-    camera_int_ext = [(torch.tensor(cam[0]), torch.tensor(cam[1])) for cam in camera_int_ext_json.values()]
+        # Run the epipolar mask function
+        epi_mask_for_views, test1, test2 = epipolar_mask(camera_int_ext, pts_cam0, pts_cam1, pts_cam2, mask_cam0.shape[-2:])
 
-    # Run the epipolar mask function
-    intersect_points = epipolar_mask(camera_int_ext, pts_cam0, pts_cam1, pts_cam2, mask_cam0.shape[-2:])
-    print("Intersection Points:", intersect_points[0][0].shape)
+        # Epipolar mask post processing
+        masks = epipolar_mask_post_process(epi_mask_for_views, mask_cam0.shape[-2:])
+
+        # Print the results
+        print("Intersection Points:", epi_mask_for_views[0][0].shape, epi_mask_for_views[0][1])
+        print("Intersection Points:", epi_mask_for_views[1][0].shape, epi_mask_for_views[1][1])
+        print("Intersection Points:", epi_mask_for_views[2][0].shape, epi_mask_for_views[2][1])
 
 # TODO: Add the visualization of the epipolar lines and intersection points
 # TODO: Batch computation of the epipolar lines for multiple objects
-# TODO: 
+# NOTE: Batch computation cannot be done since the number of points may not be varying
+# among the batches
+# TODO: Convert points to masks
+# NOTE: Done
+
+#%%
+import matplotlib.pyplot as plt
+plt.imshow(masks[0].cpu().numpy(), cmap='gray')
+plt.title('Epipolar Mask for View 0')
+plt.show()
+# %%
