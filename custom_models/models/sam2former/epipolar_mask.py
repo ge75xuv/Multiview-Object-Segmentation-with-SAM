@@ -1,4 +1,3 @@
-#%%
 from typing import List, Tuple, Optional, Dict
 
 import cv2
@@ -226,13 +225,15 @@ if __name__ == '__main__':
         mask_cam1 = torch.Tensor(predictions['pred_masks_high_res'][1])[cam1_ids, :, :]  # from the indeces
         mask_cam2 = torch.Tensor(predictions['pred_masks_high_res'][2])[cam2_ids, :, :]
 
+        mask_cam0 = torch.zeros_like(mask_cam0)
+
         # Preprocess the masks to get points
         pts_cam0, pts_cam1, pts_cam2 = epipolar_mask_preprocess(mask_cam0, mask_cam1, mask_cam2, num_points_idx=-1)
 
         # Run the epipolar mask function
         epi_mask_for_views, test1, test2 = epipolar_mask(camera_int_ext, pts_cam0, pts_cam1, pts_cam2, mask_cam0.shape[-2:])
 
-        # Epipolar mask post processing (PROBLEM IS HERE)
+        # Epipolar mask post processing
         masks = epipolar_mask_post_process(epi_mask_for_views, mask_cam0.shape[-2:])
 
         # Print the results
@@ -248,11 +249,10 @@ if __name__ == '__main__':
 # TODO: Convert points to masks
 # NOTE: Done
 # TODO: Test single epipolar line sampling
+# NOTE: Single epipolar line sampling works
 # TODO: Intersection points are extremely repetitive, need to filter them
-# An idea is to do round convert and unique
+# NOTE: Filtering works
 
-#%%
 plt.imshow(masks[0].cpu().numpy(), cmap='gray')
 plt.title('Epipolar Mask for View 0')
 plt.show()
-# %%
