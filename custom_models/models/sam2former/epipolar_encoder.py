@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from sam2.modeling.sam2_utils import DropPath, get_clones, LayerNorm2d
 
 
-class MaskDownSampler(nn.Module):
+class EpipolarMaskDownSampler(nn.Module):
     """
     Progressively downsample a mask by total_stride, each time by stride.
     Note that LayerNorm is applied per *token*, like in ViT.
@@ -135,7 +135,7 @@ class Fuser(nn.Module):
         return x
 
 
-class MemoryEncoder(nn.Module):
+class EpipolarEncoder(nn.Module):
     def __init__(
         self,
         out_dim,
@@ -179,3 +179,7 @@ class MemoryEncoder(nn.Module):
         pos = self.position_encoding(x).to(x.dtype)
 
         return {"vision_features": x, "vision_pos_enc": [pos]}
+
+# TODO: If it is not included in the state dict, load the memory encoder datadict for it.
+# Probably in the trainer
+# Check sam2former.lib load state_dict into model

@@ -29,6 +29,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         memory_attention=None,
         memory_encoder=None,
         multiview=False,
+        epipolar_encoder=None,
         prob_to_use_pt_input_for_train=0.0,
         prob_to_use_pt_input_for_eval=0.0,
         prob_to_use_box_input_for_train=0.0,
@@ -112,6 +113,7 @@ class SAM2FormerTrain(SAM2FormerBase):
             for p in self.sam_mask_decoder.parameters():
                 p.requires_grad = False
         self.multiview = multiview
+        self.epipolar_encoder = epipolar_encoder if self.multiview else None
 
     def forward(self, input: BatchedVideoDatapoint):
         if not self.multiview and (self.training or not self.forward_backbone_per_frame_for_eval):

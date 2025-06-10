@@ -77,6 +77,8 @@ def load_state_dict_into_model(
                                k.startswith("sam_prompt_encoder") or 
                                k.startswith("memory"))
                        ]
+    
+    # TODO Check model epipolar_encoder
                                
     assert len(missing_keys) == 0, f"Missing keys: {missing_keys}"
     assert len(unexpected_keys) == 0, f"Unexpected keys: {unexpected_keys}"
