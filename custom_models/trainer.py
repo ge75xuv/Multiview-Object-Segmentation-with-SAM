@@ -440,7 +440,7 @@ class Trainer:
         )
 
         self.optim.optimizer.load_state_dict(checkpoint["optimizer"])
-        self.loss.load_state_dict(checkpoint["loss"], strict=True)
+        # self.loss.load_state_dict(checkpoint["loss"], strict=True)  # HEADS UP we can maybe ignore loss 
         self.epoch = checkpoint["epoch"]
         self.steps = checkpoint["steps"]
         self.ckpt_time_elapsed = checkpoint.get("time_elapsed")

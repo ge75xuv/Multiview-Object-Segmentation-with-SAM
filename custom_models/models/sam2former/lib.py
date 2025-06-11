@@ -54,7 +54,8 @@ def load_state_dict_into_model(
     checkpoint_kernels: List[Callable] = None,
 ):
     """
-    Loads a state dict into the given model.
+    Loads a state dict into the given model. Be advised this is not the function that is called 
+    when resuming training, but rather starting from begining with given model weights.
 
     Args:
         state_dict: A dictionary containing the model's
@@ -78,7 +79,10 @@ def load_state_dict_into_model(
                                k.startswith("memory"))
                        ]
     
-    # TODO Check model epipolar_encoder
+    # For epipolar mask encoding we use the same structure as the memory encoder
+    # Get the state dict keys remove memory encider from the name
+    memory_encoder_sd = {'.'.join(key.split('.')[1:]) : value for key, value in state_dict.items() if key.startswith('memory_encoder')}
+    model.epipolar_encoder.load_state_dict(memory_encoder_sd, strict=True)
                                
     assert len(missing_keys) == 0, f"Missing keys: {missing_keys}"
     assert len(unexpected_keys) == 0, f"Unexpected keys: {unexpected_keys}"

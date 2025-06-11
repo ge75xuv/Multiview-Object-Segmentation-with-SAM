@@ -7,8 +7,8 @@ scratch:
   base_lr: 1.0e-6  # 5.0e-6
   vision_lr: 1.0e-6  # 3.0e-06
   obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29]
-  num_frames: 2
-  multiview: True
+  num_frames: 1
+  multiview: False
   max_epochs: 45
   # Decoder
   num_queries: 23
@@ -192,7 +192,7 @@ trainer:
 
     # Epipolar Encoder
     epipolar_encoder:
-      _target_: custom_models.models.sam2former.epipolar_encoder.MemoryEncoder
+      _target_: custom_models.models.sam2former.epipolar_encoder.EpipolarEncoder
       out_dim: 64
       position_encoding:
         _target_: sam2.modeling.position_encoding.PositionEmbeddingSine
@@ -374,6 +374,7 @@ trainer:
         loss_dice: 5.0
         loss_class: 2.0
       eos_coef: 0.1
+      loss_weighting: log  # HEADS UP: log linear or default
       losses: ['labels', 'masks']
       num_points: 65536  # 12544
       oversample_ratio: 3.0
@@ -418,7 +419,7 @@ trainer:
   # initialize from a SAM 2 checkpoint
   checkpoint:
     # NOTE: HEADS UP 
-    resume_from: sam2_logs/05_24_10_21/checkpoints/checkpoint_34.pt
+    resume_from: sam2_logs/05_24_10_21/checkpoints/checkpoint_38.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
     save_freq: 1 # 0 only last checkpoint is saved.
     model_weight_initializer:
@@ -430,11 +431,12 @@ trainer:
       state_dict:
         _target_: training.utils.checkpoint_utils.load_checkpoint_and_apply_kernels
         checkpoint_path: /home/guests/tuna_gurbuz/prototype/models/sam2/checkpoints/sam2.1_hiera_base_plus.pt # PATH to SAM 2.1 checkpoint
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/05_24_10_21/checkpoints/checkpoint_38.pt
         ckpt_state_dict_keys: ['model']
 
 launcher:
   num_nodes: 1
-  gpus_per_node: 1
+  gpus_per_node: 2
   experiment_log_dir: null # Path to log directory, defaults to ./sam2_logs/${config_name}
 
 # SLURM args if running on a cluster

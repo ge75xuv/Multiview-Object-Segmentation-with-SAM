@@ -4,6 +4,7 @@
 MaskFormer criterion.
 """
 import math
+import statistics
 from pathlib import Path
 import yaml
 
@@ -142,15 +143,23 @@ class SetCriterion(nn.Module):
         self.losses = losses
         empty_weight = torch.ones(self.num_classes + 1)
         empty_weight[-1] = self.eos_coef
-        loss_weighting = 'linear'
 
         # Weights for object classes
-        frequency_file_path = Path('custom_models/helpers/frequencies_with_human.yaml')
+        frequency_file_path = Path('/home/guests/tuna_gurbuz/prototype/custom_models/helpers/frequencies_with_human.yaml')
         if frequency_file_path.exists() and loss_weighting != 'default':
             print('Frequency file exists. Using weights from frequency file')
             label_frequency_type = 'human_labels' if num_classes == 16 else 'all_labels'
             with open(frequency_file_path, 'r') as f:
                 class_freqs = yaml.safe_load(f)[label_frequency_type]
+            weight_scales = {k: v[1] if len(v) == 2 else 1 for k, v in class_freqs.items()}
+            class_freqs = {k: v[0] for k, v in class_freqs.items()}
+            if label_frequency_type == 'human_labels':
+                human_freqs = sum([freq for k, freq in class_freqs.items() if k[0] == '6'])
+                human_weight_scale = statistics.mean([wg for k, wg in weight_scales.items() if k[0] == '6'])
+                class_freqs = {k: v for k, v in class_freqs.items() if k[0] != '6'}
+                weight_scales = {k: v for k, v in weight_scales.items() if k[0] != '6'}
+                class_freqs['6'] = human_freqs; weight_scales['6'] = human_weight_scale
+            # Normalize the frequencies
             min_freq = min(v for v in class_freqs.values() if v != 0)
             normalized_freqs = {k: v / min_freq if v != 0 else 0 for k, v in class_freqs.items()}
             if loss_weighting == 'linear':
@@ -162,7 +171,7 @@ class SetCriterion(nn.Module):
                 # inverse log weighting
                 class_weights = {int(k): 1 / math.log(v + 1) if v != 0 else 0.0 for k, v in normalized_freqs.items()}
             for key in class_weights:
-                    empty_weight[key] = class_weights[key]
+                    empty_weight[key] = class_weights[key] * weight_scales[f'{key}']
         else:
             assert loss_weighting == 'default', "Weighting type is given even though the file does not exist."
             print('Using default weights')       

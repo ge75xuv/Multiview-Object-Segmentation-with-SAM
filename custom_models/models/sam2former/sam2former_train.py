@@ -224,9 +224,16 @@ class SAM2FormerTrain(SAM2FormerBase):
         # first process all the initial conditioning frames to encode them as memory,
         # and then conditioning on them to track the remaining frames
         processing_order = init_cond_frames + backbone_out["frames_not_in_init_cond"]
+
+        # NOTE put the output dict [1] for not multiview case
         output_dict = {
             "cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
             "non_cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
+        } if not self.multiview else {view_idx: {
+            "cond_frame_outputs": {},  # dict containing {view_idx: {frame_idx: <out>}}
+            "non_cond_frame_outputs": {},  # dict containing {view_idx: {frame_idx: <out>}}
+            }
+            for view_idx in range(1, 4)
         }
         view_inputs = [input[idx] for idx in range(1,4)] if self.multiview else [input]
         for stage_id in processing_order:
@@ -268,7 +275,10 @@ class SAM2FormerTrain(SAM2FormerBase):
                     num_frames=num_frames,
                     run_mem_encoder=True if num_frames > 1 else False,
                 )
+
+                # NOTE In case of multiview, there is a problem below
                 # Append the output, depending on whether it's a conditioning frame
+                # NOTE Updated the output_dict adapt here accordingly
                 add_output_as_cond_frame = stage_id in init_cond_frames or (
                     self.add_all_frames_to_correct_as_cond
                     # and stage_id in frames_to_add_correction_pt
@@ -277,6 +287,10 @@ class SAM2FormerTrain(SAM2FormerBase):
                     output_dict["cond_frame_outputs"][stage_id] = current_out
                 else:
                     output_dict["non_cond_frame_outputs"][stage_id] = current_out
+
+            # NOTE Fuse the epipolars
+            if self.multiview:
+                pass
 
         if return_dict:
             return output_dict

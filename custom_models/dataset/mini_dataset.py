@@ -73,7 +73,7 @@ class MiniDataset(Dataset):
         self.camera_features = {}
         
         # Include interpolated frames (Experimental)
-        include_interpolated = True
+        include_interpolated = False
 
         # Iterate over the take folders
         for take_name in split_folder_names:
@@ -224,25 +224,25 @@ class MiniDataset(Dataset):
         self.segmentation_masks = np.array(self.segmentation_masks)
 
         # TODO DELETE AFTER
-        # self.small_onject_refinement = False
-        # if split_type == 'train' and self.small_onject_refinement:
-        #     self.split_type = split_type
-        #     with open('./temp/train_13_15_no_interp.json', 'r') as f:
-        #         self.indeces = json.load(f)["train_13_15"]
-        # else:
-        #     self.indeces = [i for i in range(len(self.images))]
-        #     self.split_type = split_type
+        self.small_onject_refinement = True
+        if split_type == 'train' and self.small_onject_refinement:
+            self.split_type = split_type
+            with open('./temp/train_13_15_no_interp.json', 'r') as f:
+                self.indeces = json.load(f)["train_13_15"]
+        else:
+            self.indeces = [i for i in range(len(self.images))]
+            self.split_type = split_type
 
     def __len__(self):
-        # if self.split_type == 'train' and self.small_onject_refinement:  # TODO DELETE AFTER
-        #     return len(self.indeces)
+        if self.split_type == 'train' and self.small_onject_refinement:  # TODO DELETE AFTER
+            return len(self.indeces)
         if self.multiview:
             return len(self.segmentation_masks) // 3
         return len(self.segmentation_masks)
 
     def __getitem__(self, index):
         # Get file paths
-        # index = self.indeces[index] if self.small_onject_refinement else index  # TODO DELETE AFTER
+        index = self.indeces[index] if self.small_onject_refinement else index  # TODO DELETE AFTER
         indeces = index * 3 + np.array([0, 1, 2]) if self.multiview else [index]
         img_view_container = []
         take_name = str(self.images[indeces[0]][0]).split('/')[-3]  # View Index:0 Frame Index:0
