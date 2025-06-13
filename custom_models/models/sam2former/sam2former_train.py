@@ -18,9 +18,9 @@ from sam2.modeling.sam2_utils import (
 )
 
 from sam2.utils.misc import concat_points
-
 from training.utils.data_utils import BatchedVideoDatapoint
 
+from custom_models.models.sam2former.epipolar_mask import epipolar_main
 
 class SAM2FormerTrain(SAM2FormerBase):
     def __init__(
@@ -113,7 +113,11 @@ class SAM2FormerTrain(SAM2FormerBase):
             for p in self.sam_mask_decoder.parameters():
                 p.requires_grad = False
         self.multiview = multiview
-        self.epipolar_encoder = epipolar_encoder if self.multiview else None
+        if self.multiview:
+            self.epipolar_encoder = epipolar_encoder
+        else:
+            self.epipolar_encoder = None
+            del epipolar_encoder  # avoid unused argument warning
 
     def forward(self, input: BatchedVideoDatapoint):
         if not self.multiview and (self.training or not self.forward_backbone_per_frame_for_eval):
@@ -220,22 +224,22 @@ class SAM2FormerTrain(SAM2FormerBase):
         # Starting the stage loop
         num_frames = backbone_out["num_frames"]
         init_cond_frames = backbone_out["init_cond_frames"]
-        # frames_to_add_correction_pt = backbone_out["frames_to_add_correction_pt"]
         # first process all the initial conditioning frames to encode them as memory,
         # and then conditioning on them to track the remaining frames
         processing_order = init_cond_frames + backbone_out["frames_not_in_init_cond"]
 
-        # NOTE put the output dict [1] for not multiview case
-        output_dict = {
+        # output_dict has view indeces as keys and frame outputs as values, where frame outputs are also dictionaries
+        output_dict = {0: {
             "cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
-            "non_cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
+            "non_cond_frame_outputs": {},}  # dict containing {frame_idx: <out>}
         } if not self.multiview else {view_idx: {
             "cond_frame_outputs": {},  # dict containing {view_idx: {frame_idx: <out>}}
             "non_cond_frame_outputs": {},  # dict containing {view_idx: {frame_idx: <out>}}
             }
-            for view_idx in range(1, 4)
+            for view_idx in range(3)
         }
-        view_inputs = [input[idx] for idx in range(1,4)] if self.multiview else [input]
+        view_inputs = [input[idx] for idx in range(3)] if self.multiview else [input]
+        camera_int_ext = input.camera_intrinsics_extrinsics if self.multiview else None
         for stage_id in processing_order:
             for view_idx, input in enumerate(view_inputs):
                 # Get the image features for the current frames
@@ -267,50 +271,51 @@ class SAM2FormerTrain(SAM2FormerBase):
                     current_vision_feats=current_vision_feats,
                     current_vision_pos_embeds=current_vision_pos_embeds,
                     feat_sizes=feat_sizes,
-                    # point_inputs=backbone_out["point_inputs_per_frame"].get(stage_id, None),
-                    # mask_inputs=backbone_out["mask_inputs_per_frame"].get(stage_id, None),
-                    # gt_masks=backbone_out["gt_masks_per_frame"].get(stage_id, None),
-                    # frames_to_add_correction_pt=frames_to_add_correction_pt,
-                    output_dict=output_dict,
+                    output_dict=output_dict[view_idx],
                     num_frames=num_frames,
                     run_mem_encoder=True if num_frames > 1 else False,
                 )
 
-                # NOTE In case of multiview, there is a problem below
-                # Append the output, depending on whether it's a conditioning frame
-                # NOTE Updated the output_dict adapt here accordingly
-                add_output_as_cond_frame = stage_id in init_cond_frames or (
-                    self.add_all_frames_to_correct_as_cond
-                    # and stage_id in frames_to_add_correction_pt
-                )
+                add_output_as_cond_frame = stage_id in init_cond_frames
                 if add_output_as_cond_frame:
-                    output_dict["cond_frame_outputs"][stage_id] = current_out
+                    output_dict[view_idx]["cond_frame_outputs"][stage_id] = current_out
                 else:
-                    output_dict["non_cond_frame_outputs"][stage_id] = current_out
+                    output_dict[view_idx]["non_cond_frame_outputs"][stage_id] = current_out
 
             # NOTE Fuse the epipolars
             if self.multiview:
-                pass
+                pred0 = output_dict[0]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[0]["non_cond_frame_outputs"][stage_id]
+                pred1 = output_dict[1]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[1]["non_cond_frame_outputs"][stage_id]
+                pred2 = output_dict[2]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[2]["non_cond_frame_outputs"][stage_id]
+                epipolar_masks = epipolar_main(camera_int_ext, pred0, pred1, pred2)
+
+            # end view loop
+        # end stage loop
 
         if return_dict:
             return output_dict
 
         # HEADS UP Get rid of unnecessary keys in the output_dict
         used_keys = ['pred_masks', 'pred_masks_high_res', 'pred_logits', 'aux_outputs']
-        for key, value in output_dict.items():  # cond_frame_outputs, non_cond_frame_outputs
-            for k, v in value.items():  # frame_idx
-                frame_out = output_dict[key][k]
-                output_dict[key][k] = {out_type: out_val for out_type, out_val in frame_out.items() if out_type in used_keys}
+        for view_idx in output_dict:
+            for key, value in output_dict[view_idx].items():  # cond_frame_outputs, non_cond_frame_outputs
+                for k, v in value.items():  # frame_idx
+                    frame_out = output_dict[view_idx][key][k]
+                    output_dict[view_idx][key][k] = {out_type: out_val for out_type, out_val in frame_out.items() if out_type in used_keys}
 
         # turn `output_dict` into a list for loss function
-        all_frame_outputs = {}
-        all_frame_outputs.update(output_dict["cond_frame_outputs"])
-        all_frame_outputs.update(output_dict["non_cond_frame_outputs"])
-        # all_frame_outputs = [all_frame_outputs[t] for t in range(num_frames)]
-        # Make DDP happy with activation checkpointing by removing unused keys
-        # all_frame_outputs = [
-        #     {k: v for k, v in d.items() if k != "obj_ptr"} for d in all_frame_outputs
-        # ]
+        # all_frame_outputs = {view_idx: {} for view_idx in output_dict.keys()}
+        # for view_idx in all_frame_outputs:
+        #     all_frame_outputs[view_idx].update(output_dict[view_idx]["cond_frame_outputs"])
+        #     all_frame_outputs[view_idx].update(output_dict[view_idx]["non_cond_frame_outputs"])
+
+        # turn `output_dict` into a list for loss function. It does the above but much faster
+        all_frame_outputs = {
+            view_idx: {stage_id: view_out["cond_frame_outputs"][stage_id] 
+                       if stage_id in view_out["cond_frame_outputs"].keys() 
+                       else view_out["non_cond_frame_outputs"][stage_id] for stage_id in processing_order} 
+                for view_idx, view_out in output_dict.items()
+            }
 
         return all_frame_outputs
 

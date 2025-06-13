@@ -73,7 +73,7 @@ class MiniDataset(Dataset):
         self.camera_features = {}
         
         # Include interpolated frames (Experimental)
-        include_interpolated = False
+        include_interpolated = False if not self.multiview else True
 
         # Iterate over the take folders
         for take_name in split_folder_names:
@@ -224,7 +224,7 @@ class MiniDataset(Dataset):
         self.segmentation_masks = np.array(self.segmentation_masks)
 
         # TODO DELETE AFTER
-        self.small_onject_refinement = True
+        self.small_onject_refinement = False
         if split_type == 'train' and self.small_onject_refinement:
             self.split_type = split_type
             with open('./temp/train_13_15_no_interp.json', 'r') as f:

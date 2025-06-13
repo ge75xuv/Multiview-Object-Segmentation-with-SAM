@@ -1,14 +1,14 @@
 # @package _global_
 
 scratch:
-  resolution: 512
+  resolution: 256
   train_batch_size: 1
   num_train_workers: 1
   base_lr: 1.0e-6  # 5.0e-6
   vision_lr: 1.0e-6  # 3.0e-06
   obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29]
-  num_frames: 1
-  multiview: False
+  num_frames: 2
+  multiview: True
   max_epochs: 45
   # Decoder
   num_queries: 23
@@ -419,7 +419,7 @@ trainer:
   # initialize from a SAM 2 checkpoint
   checkpoint:
     # NOTE: HEADS UP 
-    resume_from: sam2_logs/05_24_10_21/checkpoints/checkpoint_38.pt
+    # resume_from: sam2_logs/06_11_23_30/checkpoints/checkpoint_40.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
     save_freq: 1 # 0 only last checkpoint is saved.
     model_weight_initializer:
@@ -430,13 +430,13 @@ trainer:
       ignore_missing_keys: null
       state_dict:
         _target_: training.utils.checkpoint_utils.load_checkpoint_and_apply_kernels
-        checkpoint_path: /home/guests/tuna_gurbuz/prototype/models/sam2/checkpoints/sam2.1_hiera_base_plus.pt # PATH to SAM 2.1 checkpoint
-        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/05_24_10_21/checkpoints/checkpoint_38.pt
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/models/sam2/checkpoints/sam2.1_hiera_base_plus.pt # PATH to SAM 2.1 checkpoint
+        checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/05_24_10_21/checkpoints/checkpoint_40.pt
         ckpt_state_dict_keys: ['model']
 
 launcher:
   num_nodes: 1
-  gpus_per_node: 2
+  gpus_per_node: 1
   experiment_log_dir: null # Path to log directory, defaults to ./sam2_logs/${config_name}
 
 # SLURM args if running on a cluster

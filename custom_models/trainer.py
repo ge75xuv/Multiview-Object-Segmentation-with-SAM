@@ -465,22 +465,49 @@ class Trainer:
 
         outputs = model(batch)
         targets = []
-        batch_size = len(batch.img_batch)
-        key = batch.dict_key  # key for dataset
+        
+        # HEADS UP: Case distinction between multiview and single view
+        if hasattr(batch, "img_batch"):
+            assert len(outputs) == 1, "Multiview configuration has only one view output"
+            batch_size = len(batch.img_batch)
+            key = batch.dict_key  # key for dataset
 
-        # HEADS UP: Reshape the target for the loss
-        frame_idx = [idx for idx in range(batch_size)]  # Batch size is technically num frames
-        batch_idx = batch.metadata.unique_objects_identifier[:,:,0].unique()
-        iter_indeces = frame_idx if frame_idx != [0] else batch_idx
-        iter_dim = 2 if frame_idx != [0] else 0
-        for i in iter_indeces:
-            # dim=2 video_id, obj_id, frame_id
-            xx, yy = torch.where(batch.metadata.unique_objects_identifier[:,:,iter_dim] == i)
-            obj_id = batch.metadata.unique_objects_identifier[xx,yy,1]
-            targets.append({
-                "masks": batch.masks[xx, yy],
-                "labels": obj_id,
-            })
+            # Reshape the target for the loss
+            frame_idx = [idx for idx in range(batch_size)]  # Batch size is technically num frames
+            batch_idx = batch.metadata.unique_objects_identifier[:,:,0].unique()
+            iter_indeces = frame_idx if frame_idx != [0] else batch_idx
+            iter_dim = 2 if frame_idx != [0] else 0
+            for i in iter_indeces:
+                # dim=2 video_id, obj_id, frame_id
+                xx, yy = torch.where(batch.metadata.unique_objects_identifier[:,:,iter_dim] == i)
+                obj_id = batch.metadata.unique_objects_identifier[xx,yy,1]
+                targets.append({
+                    "masks": batch.masks[xx, yy],
+                    "labels": obj_id,
+                })
+            # Modify the output
+            outputs = outputs[0]  # Outputs are standardized for multiview, just take the first view
+        else:
+            for view_idx in range(3):
+                batch_size = len(batch[view_idx].img_batch)
+                key = batch[view_idx].dict_key  # key for dataset
+
+                # Reshape the target for the loss
+                frame_idx = [idx for idx in range(batch_size)]  # Batch size is technically num frames
+                batch_idx = batch[view_idx].metadata.unique_objects_identifier[:,:,0].unique()
+                iter_indeces = frame_idx if frame_idx != [0] else batch_idx
+                iter_dim = 2 if frame_idx != [0] else 0
+                for i in iter_indeces:
+                    # dim=2 video_id, obj_id, frame_id
+                    xx, yy = torch.where(batch[view_idx].metadata.unique_objects_identifier[:,:,iter_dim] == i)
+                    obj_id = batch[view_idx].metadata.unique_objects_identifier[xx,yy,1]
+                    targets.append({
+                        "masks": batch[view_idx].masks[xx, yy],
+                        "labels": obj_id,
+                    })
+            # Modify the outputs shape to match the targets 
+            # outputs = {0: {0:, 1:, 2:}, 1: {0:, 1:, 2:}, 2: {0:, 1:, 2:}} -> {0: , 1:, 2:, ...}
+            outputs = {view_idx*batch_size + stage_id: outputs[view_idx][stage_id] for view_idx in outputs for stage_id in outputs[view_idx]}
 
         # Calculate the loss
         loss = self.loss[key](outputs, targets)

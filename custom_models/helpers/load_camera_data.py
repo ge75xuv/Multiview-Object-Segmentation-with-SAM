@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.spatial.transform import Rotation
+import torch
 
 def load_camera_data(camera_data, downscale=1):
     h, w = camera_data['value0']['color_parameters']['height'], camera_data['value0']['color_parameters']['width']
@@ -39,4 +40,4 @@ def load_camera_data(camera_data, downscale=1):
     dist += [rd for rd in rad_dist.values()]
     dist = np.array(dist, dtype=np.float32)
 
-    return K, extrinsics, padding, dist, depth_extrinsics
+    return torch.tensor(K), torch.tensor(extrinsics), padding, dist, depth_extrinsics

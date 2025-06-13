@@ -27,18 +27,17 @@ class MultiviewBatchedVideoDatapoint:
     view1_batchvideo: BatchedVideoDatapoint
     view2_batchvideo: BatchedVideoDatapoint
     view3_batchvideo: BatchedVideoDatapoint
-    camera_intrinsics: npt.NDArray
-    camera_extrinsics: npt.NDArray
+    camera_intrinsics_extrinsics: List[Tuple[torch.Tensor, torch.Tensor]]  # List of tuples (intrinsics, extrinsics) for each view
 
     def __getitem__(self, idx: int) -> BatchedVideoDatapoint:
         """
         Allows indexing into the multiview batch to get a specific view's BatchedVideoDatapoint.
         """
-        if idx == 1:
+        if idx == 0:
             return self.view1_batchvideo
-        elif idx == 2:
+        elif idx == 1:
             return self.view2_batchvideo
-        elif idx == 3:
+        elif idx == 2:
             return self.view3_batchvideo
         else:
             raise IndexError("Index out of range for multiview batch.")
@@ -70,7 +69,7 @@ def collate_fn_wrapper(
     assert len(batch[0]) == 2, "Batch should contain VideoDatapoints and camera data."
     assert len(batch[0][0]) == 3, "Batch should contain exactly 3 views for multiview data."
 
-    view_batchvideo = [None, None, None, batch[0][1][0], batch[0][1][1]]
+    view_batchvideo = [None, None, None, batch[0][1]]
     for idx, bc_view in enumerate(batch[0][0]):
         view_batchvideo[idx] = collate_fn([bc_view], dict_key=dict_key)
     return MultiviewBatchedVideoDatapoint(*view_batchvideo)

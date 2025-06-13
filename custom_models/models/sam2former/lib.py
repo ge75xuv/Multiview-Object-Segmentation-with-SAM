@@ -78,11 +78,16 @@ def load_state_dict_into_model(
                                k.startswith("sam_prompt_encoder") or 
                                k.startswith("memory"))
                        ]
-    
+
+    # Check if the epipolar encoder state dict exists, if not load the memory encoder state dict
+    len_missing_keys = len(missing_keys)
+    missing_keys = [k for k in unexpected_keys 
+                    if not k.startswith("epipolar_encoder")]
+    epipolar_sd_missing = len_missing_keys - len(missing_keys) > 0
     # For epipolar mask encoding we use the same structure as the memory encoder
     # Get the state dict keys remove memory encider from the name
     memory_encoder_sd = {'.'.join(key.split('.')[1:]) : value for key, value in state_dict.items() if key.startswith('memory_encoder')}
-    model.epipolar_encoder.load_state_dict(memory_encoder_sd, strict=True)
+    model.epipolar_encoder.load_state_dict(memory_encoder_sd, strict=True) if epipolar_sd_missing else None
                                
     assert len(missing_keys) == 0, f"Missing keys: {missing_keys}"
     assert len(unexpected_keys) == 0, f"Unexpected keys: {unexpected_keys}"

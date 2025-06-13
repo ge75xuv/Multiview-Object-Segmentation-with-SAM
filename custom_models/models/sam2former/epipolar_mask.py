@@ -111,6 +111,7 @@ def epipolar_mask_post_process(
     #         masks[k] = cv2.circle(masks[k], pt_int, 2, [255 * w, 0, 0], 1)
     # return masks
 
+@torch.no_grad()
 def epipolar_mask(
     camera_int_ext: List[torch.Tensor],
     pts_cam0: torch.Tensor,
@@ -150,8 +151,8 @@ def epipolar_mask(
     epi_lines_1_to_2 = compute_epipolar_lines(ext_1_to_2, K2, K1, pts_cam1) if pts_cam1 is not None else None
 
     # NOTE: DEBUG
-    test_img1 = draw_epilines(np.zeros((_size[0], _size[1], 1)), epi_lines_1_to_0, padding=0)
-    test_img2 = draw_epilines(np.zeros((_size[0], _size[1], 1)), epi_lines_2_to_0, padding=0)
+    # test_img1 = draw_epilines(np.zeros((_size[0], _size[1], 1)), epi_lines_1_to_0, padding=0)
+    # test_img2 = draw_epilines(np.zeros((_size[0], _size[1], 1)), epi_lines_2_to_0, padding=0)
 
     # Put the lines in the form ax + by + c = 0
     skip = 1
@@ -190,7 +191,45 @@ def epipolar_mask(
                            _first_epi_lines if _first_epi_lines is not None else _second_epi_lines
                         )
             epi_masks_for_views[view] = intersect_point, _case_weights[1]
-    return epi_masks_for_views, test_img1, test_img2
+    return epi_masks_for_views
+
+@torch.no_grad()
+def epipolar_main(camera_int_ext: List[torch.Tensor],
+                  predictions0: Dict[str, torch.Tensor],
+                  predictions1: Dict[str, torch.Tensor],
+                  predictions2: Dict[str, torch.Tensor],
+                  ):
+    """Wrap the epipolar functionality to be used in the training class."""
+    # Change camera_int_ext to a list of tensors for each camera
+    #TODO save initially as tensor not numpy
+    [[torch.tensor(int_ext[0]), torch.tensor(int_ext[1])] for int_ext in zip(*camera_int_ext)]
+
+    # Get the logits from each camera's predictions.
+    pred_class0 = torch.Tensor(predictions0['pred_logits']).softmax(dim=-1).argmax(dim=-1)
+    pred_class1 = torch.Tensor(predictions1['pred_logits']).softmax(dim=-1).argmax(dim=-1)
+    pred_class2 = torch.Tensor(predictions2['pred_logits']).softmax(dim=-1).argmax(dim=-1)
+
+    # Iterate over the objects of interest and get the masks.
+    for obj_idx in OBJECTS_EPIPOLAR:
+        # Find the positions of the object in each camera's predictions
+        pos_obj0 = torch.where(pred_class0 == obj_idx)  # pos_obj0 is a tuple of (batch_idx, class_idx)
+        pos_obj1 = torch.where(pred_class1 == obj_idx)  # pos_obj1 is a tuple of (batch_idx, class_idx)
+        pos_obj2 = torch.where(pred_class2 == obj_idx)  # pos_obj2 is a tuple of (batch_idx, class_idx)
+
+        # Get the masks for the first three cameras
+        mask_cam0 = predictions0['pred_masks_high_res'][pos_obj0].squeeze(0)  # Slice the correct objects
+        mask_cam1 = predictions1['pred_masks_high_res'][pos_obj1].squeeze(0)  # from the indeces
+        mask_cam2 = predictions2['pred_masks_high_res'][pos_obj2].squeeze(0)
+
+        # Preprocess the masks to get points
+        pts_cam0, pts_cam1, pts_cam2 = epipolar_mask_preprocess(mask_cam0, mask_cam1, mask_cam2, num_points_idx=-1)
+
+        # Run the epipolar mask function
+        epi_mask_for_views = epipolar_mask(camera_int_ext, pts_cam0, pts_cam1, pts_cam2, mask_cam0.shape[-2:])
+
+        # Epipolar mask post processing
+        masks = epipolar_mask_post_process(epi_mask_for_views, mask_cam0.shape[-2:])
+    return masks
 
 
 if __name__ == '__main__':
@@ -225,7 +264,8 @@ if __name__ == '__main__':
         mask_cam1 = torch.Tensor(predictions['pred_masks_high_res'][1])[cam1_ids, :, :]  # from the indeces
         mask_cam2 = torch.Tensor(predictions['pred_masks_high_res'][2])[cam2_ids, :, :]
 
-        mask_cam0 = torch.zeros_like(mask_cam0)
+        # NOTE: test lacking visibility
+        # mask_cam0 = torch.zeros_like(mask_cam0)
 
         # Preprocess the masks to get points
         pts_cam0, pts_cam1, pts_cam2 = epipolar_mask_preprocess(mask_cam0, mask_cam1, mask_cam2, num_points_idx=-1)
@@ -253,6 +293,6 @@ if __name__ == '__main__':
 # TODO: Intersection points are extremely repetitive, need to filter them
 # NOTE: Filtering works
 
-plt.imshow(masks[0].cpu().numpy(), cmap='gray')
-plt.title('Epipolar Mask for View 0')
-plt.show()
+    # plt.imshow(masks[0].cpu().numpy(), cmap='gray')
+    # plt.title('Epipolar Mask for View 0')
+    # plt.show()
