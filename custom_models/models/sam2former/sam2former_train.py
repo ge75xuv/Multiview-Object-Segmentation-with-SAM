@@ -240,6 +240,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         }
         view_inputs = [input[idx] for idx in range(3)] if self.multiview else [input]
         camera_int_ext = input.camera_intrinsics_extrinsics if self.multiview else None
+        feature_container_for_multiview_fusion = {}
         for stage_id in processing_order:
             for view_idx, input in enumerate(view_inputs):
                 # Get the image features for the current frames
@@ -282,14 +283,29 @@ class SAM2FormerTrain(SAM2FormerBase):
                 else:
                     output_dict[view_idx]["non_cond_frame_outputs"][stage_id] = current_out
 
-            # NOTE Fuse the epipolars
+                # We need the vision features for epipolar encoding
+                if self.multiview:
+                    D, B, HW = current_vision_feats[-1].shape
+                    H = W = torch.sqrt(torch.tensor(HW)).int()
+                    last_vision_feat = current_vision_feats[-1].detach().clone()  #TODO NOT SURE IF DETACH
+                    feature_container_for_multiview_fusion[view_idx] = last_vision_feat.transpose(1, 0).view(B, D, H, W)
+            # end view loop
+
+            # Fuse the epipolars
             if self.multiview:
                 pred0 = output_dict[0]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[0]["non_cond_frame_outputs"][stage_id]
                 pred1 = output_dict[1]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[1]["non_cond_frame_outputs"][stage_id]
                 pred2 = output_dict[2]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[2]["non_cond_frame_outputs"][stage_id]
-                epipolar_masks = epipolar_main(camera_int_ext, pred0, pred1, pred2)
+                epipolar_masks = epipolar_main(camera_int_ext, pred0, pred1, pred2).to(self.device)
+                pix_feat = torch.vstack(list(feature_container_for_multiview_fusion.values()))
+                # NOTE pix_feats = (3, 256, 16, 16), epipolar_masks = (O, 3, H, W)
+                # NOTE pix_feat_for_mem = (1, 256, 16, 16) mask_for_mem = (23, 1, 256, 256)
+                encoded_epipolar_dict = {}
+                for view_idx in range(3):
+                    encoded_epipolars = self.epipolar_encoder(pix_feat[view_idx:view_idx+1], epipolar_masks[:,view_idx:view_idx+1])
+                    # dictionary with keys "vision_features" and "vision_pos_enc"
+                    encoded_epipolar_dict[view_idx] = encoded_epipolars["vision_features"], encoded_epipolars["vision_pos_enc"]
 
-            # end view loop
         # end stage loop
 
         if return_dict:

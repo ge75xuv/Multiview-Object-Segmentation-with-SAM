@@ -195,6 +195,10 @@ class SAM2FormerBase(torch.nn.Module):
         self.multi_object_memory_proj = torch.nn.Linear(num_queries,1)
         self.multi_object_memory_pos_proj = torch.nn.Linear(num_queries,1)
 
+        # a single token to indicate no memory embedding from previous frames
+        self.no_epipolar_embed = torch.nn.Parameter(torch.zeros(1, 1, self.hidden_dim))
+        self.no_epipolar_pos_enc = torch.nn.Parameter(torch.zeros(1, 1, self.hidden_dim))
+
         # Model compilation
         if compile_image_encoder:
             # Compile the forward function (not the full module) to allow loading checkpoints.
@@ -731,6 +735,7 @@ class SAM2FormerBase(torch.nn.Module):
             # if prev_sam_mask_logits is not None:
             #     assert point_inputs is not None and mask_inputs is None
             #     mask_inputs = prev_sam_mask_logits
+        #TODO epipolar fusion
         sam_outputs = self._forward_sam_heads(
                 backbone_features=pix_feat,
                 # point_inputs=point_inputs,

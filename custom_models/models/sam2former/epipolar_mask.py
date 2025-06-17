@@ -44,8 +44,9 @@ def compute_epipolar_lines(ext, K_line, K_pt, pts1):
     # NOTE inverse can be changed by custom computation
     inv_K1 = torch.linalg.inv(K_line)
     inv_K0 = torch.linalg.inv(K_pt)
-    F = inv_K0.mT @ E @ inv_K1
-    pts1_h = torch.hstack((pts1, torch.ones((pts1.shape[0], 1))))  # homogeneous
+    device = pts1.device
+    F = (inv_K0.mT @ E @ inv_K1).to(device)
+    pts1_h = torch.hstack((pts1, torch.ones((pts1.shape[0], 1), device=device)))  # homogeneous
     lines2 = (F @ pts1_h.mT).mT  # Each row is [a, b, c]
     return lines2
 
@@ -63,8 +64,8 @@ def intersection(a, b, c, k, l, m):
 def single_epiline(_size: Tuple[int, int], lines: torch.Tensor):
     step = 10  # Step size for sampling points along the epipolar line
     h, w = _size
-    eval_func = lambda x: (-lines[:, 2] - lines[:, 0] * x) / lines[:, 1]
-    pts = torch.tensor([(x, y) for x in range(0, w, step) for y in eval_func(x) if y >= 0 and y <= h])
+    eval_func = lambda x: (-lines[:, 2] - lines[:, 0] * x) / lines[:, 1]  # It moves the points cpu if previously in cuda.
+    pts = torch.tensor([(x, y) for x in range(0, w, step) for y in eval_func(x) if y >= 0 and y < h])
     return pts
 
 @torch.no_grad()
@@ -162,6 +163,7 @@ def epipolar_mask(
         _second_epi_lines = eval(VIEW_COMBINATIONS[view][1])
         # Discriminate between the cases If both are None, skip this view
         if _first_epi_lines is None and _second_epi_lines is None:
+            epi_masks_for_views[view] = torch.tensor([[0,0]]), 0
             continue
 
         # If both lines exist, compute the intersection
@@ -200,17 +202,18 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
                   predictions2: Dict[str, torch.Tensor],
                   ):
     """Wrap the epipolar functionality to be used in the training class."""
-    # Change camera_int_ext to a list of tensors for each camera
-    #TODO save initially as tensor not numpy
-    [[torch.tensor(int_ext[0]), torch.tensor(int_ext[1])] for int_ext in zip(*camera_int_ext)]
 
     # Get the logits from each camera's predictions.
     pred_class0 = torch.Tensor(predictions0['pred_logits']).softmax(dim=-1).argmax(dim=-1)
     pred_class1 = torch.Tensor(predictions1['pred_logits']).softmax(dim=-1).argmax(dim=-1)
     pred_class2 = torch.Tensor(predictions2['pred_logits']).softmax(dim=-1).argmax(dim=-1)
 
+    # Initialize the masks
+    h, w = predictions0['pred_masks_high_res'].shape[-2:]
+    masks = torch.zeros([len(OBJECTS_EPIPOLAR), 3, h, w], dtype=torch.float32)
+
     # Iterate over the objects of interest and get the masks.
-    for obj_idx in OBJECTS_EPIPOLAR:
+    for ii, obj_idx in enumerate(OBJECTS_EPIPOLAR):
         # Find the positions of the object in each camera's predictions
         pos_obj0 = torch.where(pred_class0 == obj_idx)  # pos_obj0 is a tuple of (batch_idx, class_idx)
         pos_obj1 = torch.where(pred_class1 == obj_idx)  # pos_obj1 is a tuple of (batch_idx, class_idx)
@@ -228,7 +231,8 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
         epi_mask_for_views = epipolar_mask(camera_int_ext, pts_cam0, pts_cam1, pts_cam2, mask_cam0.shape[-2:])
 
         # Epipolar mask post processing
-        masks = epipolar_mask_post_process(epi_mask_for_views, mask_cam0.shape[-2:])
+        mask = epipolar_mask_post_process(epi_mask_for_views, mask_cam0.shape[-2:])
+        masks[ii] = mask
     return masks
 
 
