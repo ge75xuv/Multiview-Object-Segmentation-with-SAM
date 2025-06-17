@@ -30,6 +30,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         memory_encoder=None,
         multiview=False,
         epipolar_encoder=None,
+        epipolar_attention=None,
         prob_to_use_pt_input_for_train=0.0,
         prob_to_use_pt_input_for_eval=0.0,
         prob_to_use_box_input_for_train=0.0,
@@ -71,7 +72,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         freeze_sam_mask_decoder=False,
         **kwargs,
     ):
-        super().__init__(image_encoder, memory_attention, memory_encoder, **kwargs)
+        super().__init__(image_encoder, memory_attention, memory_encoder, multiview, epipolar_attention, **kwargs)
         self.use_act_ckpt_iterative_pt_sampling = use_act_ckpt_iterative_pt_sampling
         self.forward_backbone_per_frame_for_eval = forward_backbone_per_frame_for_eval
 
@@ -112,7 +113,7 @@ class SAM2FormerTrain(SAM2FormerBase):
             # HEADS UP
             for p in self.sam_mask_decoder.parameters():
                 p.requires_grad = False
-        self.multiview = multiview
+
         if self.multiview:
             self.epipolar_encoder = epipolar_encoder
         else:
@@ -241,6 +242,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         view_inputs = [input[idx] for idx in range(3)] if self.multiview else [input]
         camera_int_ext = input.camera_intrinsics_extrinsics if self.multiview else None
         feature_container_for_multiview_fusion = {}
+        encoded_epipolar_dict = {0: {}, 1: {}, 2: {}}
         for stage_id in processing_order:
             for view_idx, input in enumerate(view_inputs):
                 # Get the image features for the current frames
@@ -273,6 +275,7 @@ class SAM2FormerTrain(SAM2FormerBase):
                     current_vision_pos_embeds=current_vision_pos_embeds,
                     feat_sizes=feat_sizes,
                     output_dict=output_dict[view_idx],
+                    encoded_epipolar_dict = encoded_epipolar_dict[view_idx] if self.multiview else None,
                     num_frames=num_frames,
                     run_mem_encoder=True if num_frames > 1 else False,
                 )
@@ -291,7 +294,7 @@ class SAM2FormerTrain(SAM2FormerBase):
                     feature_container_for_multiview_fusion[view_idx] = last_vision_feat.transpose(1, 0).view(B, D, H, W)
             # end view loop
 
-            # Fuse the epipolars
+            # Fuse the epipolar lines
             if self.multiview:
                 pred0 = output_dict[0]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[0]["non_cond_frame_outputs"][stage_id]
                 pred1 = output_dict[1]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[1]["non_cond_frame_outputs"][stage_id]
@@ -300,11 +303,11 @@ class SAM2FormerTrain(SAM2FormerBase):
                 pix_feat = torch.vstack(list(feature_container_for_multiview_fusion.values()))
                 # NOTE pix_feats = (3, 256, 16, 16), epipolar_masks = (O, 3, H, W)
                 # NOTE pix_feat_for_mem = (1, 256, 16, 16) mask_for_mem = (23, 1, 256, 256)
-                encoded_epipolar_dict = {}
+                # Encode the epipolar features
                 for view_idx in range(3):
                     encoded_epipolars = self.epipolar_encoder(pix_feat[view_idx:view_idx+1], epipolar_masks[:,view_idx:view_idx+1])
                     # dictionary with keys "vision_features" and "vision_pos_enc"
-                    encoded_epipolar_dict[view_idx] = encoded_epipolars["vision_features"], encoded_epipolars["vision_pos_enc"]
+                    encoded_epipolar_dict[view_idx] = encoded_epipolars
 
         # end stage loop
 
@@ -346,6 +349,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         # mask_inputs,
         output_dict,
         num_frames,
+        encoded_epipolar_dict=None,  # dictionary containing encoded epipolar features
         track_in_reverse=False,  # tracking in reverse time order (for demo usage)
         run_mem_encoder=True,  # Whether to run the memory encoder on the predicted masks.
         prev_sam_mask_logits=None,  # The previously predicted SAM mask logits.
@@ -363,6 +367,7 @@ class SAM2FormerTrain(SAM2FormerBase):
             # point_inputs,
             # mask_inputs,
             output_dict,
+            encoded_epipolar_dict,
             num_frames,
             track_in_reverse,
             prev_sam_mask_logits,

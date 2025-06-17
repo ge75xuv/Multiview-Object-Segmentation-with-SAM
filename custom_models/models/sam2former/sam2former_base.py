@@ -29,7 +29,9 @@ class SAM2FormerBase(torch.nn.Module):
         image_encoder,
         memory_attention,
         memory_encoder,
-        mask_decoder_cfg: Dict[str, Any],
+        multiview=False,
+        epipolar_attention=None,
+        mask_decoder_cfg: Dict[str, Any]=None,
         num_maskmem=7,  # default 1 input frame + 6 previous frames
         image_size=512,
         backbone_stride=16,  # stride of the image backbone output
@@ -109,9 +111,9 @@ class SAM2FormerBase(torch.nn.Module):
         self.use_obj_ptrs_in_encoder = use_obj_ptrs_in_encoder
         self.max_obj_ptrs_in_encoder = max_obj_ptrs_in_encoder
         if use_obj_ptrs_in_encoder:
-            # A conv layer to downsample the mask prompt to stride 4 (the same stride as
-            # low-res SAM mask logits) and to change its scales from 0~1 to SAM logit scale,
-            # so that it can be fed into the SAM mask decoder to generate a pointer.
+        #     # A conv layer to downsample the mask prompt to stride 4 (the same stride as
+        #     # low-res SAM mask logits) and to change its scales from 0~1 to SAM logit scale,
+        #     # so that it can be fed into the SAM mask decoder to generate a pointer.
             self.mask_downsample = torch.nn.Conv2d(1, 1, kernel_size=4, stride=4)
         self.add_tpos_enc_to_obj_ptrs = add_tpos_enc_to_obj_ptrs
         if proj_tpos_enc_in_obj_ptrs:
@@ -154,7 +156,7 @@ class SAM2FormerBase(torch.nn.Module):
         self.memory_temporal_stride_for_eval = memory_temporal_stride_for_eval
         # On frames with mask input, whether to directly output the input mask without
         # using a SAM prompt encoder + mask decoder
-        self.use_mask_input_as_output_without_sam = use_mask_input_as_output_without_sam
+        # self.use_mask_input_as_output_without_sam = use_mask_input_as_output_without_sam
         # HEADS-UP
         self.multimask_output_in_sam = False
         self.multimask_min_pt_num = multimask_min_pt_num
@@ -163,8 +165,7 @@ class SAM2FormerBase(torch.nn.Module):
         self.use_multimask_token_for_obj_ptr = use_multimask_token_for_obj_ptr
         self.iou_prediction_use_sigmoid = iou_prediction_use_sigmoid
 
-        # Part 4: SAM-style prompt encoder (for both mask and point inputs)
-        # and SAM-style mask decoder for the final mask output
+        # Part 4: Mask2Former-style segmentation head
         self.image_size = image_size
         self.backbone_stride = backbone_stride
         self.sam_mask_decoder_extra_args = sam_mask_decoder_extra_args
@@ -190,12 +191,19 @@ class SAM2FormerBase(torch.nn.Module):
 
         # HEADS UP
         # Memory projection for multiobject
-        # num_queries = mask_decoder_cfg['transformer_predictor']['num_queries']
         num_queries = self.sam_mask_decoder.predictor.num_queries
         self.multi_object_memory_proj = torch.nn.Linear(num_queries,1)
         self.multi_object_memory_pos_proj = torch.nn.Linear(num_queries,1)
 
-        # a single token to indicate no memory embedding from previous frames
+        # Part 5: Epipolar attention
+        self.multiview = multiview
+        if self.multiview:
+            self.epipolar_attention = epipolar_attention
+        else:
+            self.epipolar_attention = None
+            del epipolar_attention  # avoid unused argument warning
+
+        # A single token to indicate no memory embedding from previous frames
         self.no_epipolar_embed = torch.nn.Parameter(torch.zeros(1, 1, self.hidden_dim))
         self.no_epipolar_pos_enc = torch.nn.Parameter(torch.zeros(1, 1, self.hidden_dim))
 
@@ -442,6 +450,50 @@ class SAM2FormerBase(torch.nn.Module):
 
         return backbone_out, vision_feats, vision_pos_embeds, feat_sizes
 
+    def _prepare_epipolar_conditioned_features(
+        self,
+        frame_idx,
+        is_init_cond_frame,
+        current_vision_feats,
+        current_vision_pos_embeds,
+        feat_sizes,
+        encoded_epipolar_dict,
+    ):
+        """Fuse the current frame's visual feature map with previous epipolar features."""
+        B = current_vision_feats[-1].size(1)  # batch size on this frame
+        C = self.hidden_dim
+        H, W = feat_sizes[-1]  # top-level (lowest-resolution) feature size
+        device = current_vision_feats[-1].device
+        if is_init_cond_frame:
+            assert len(encoded_epipolar_dict) == 0, "No epipolar features should be provided for the initial conditioning frame."
+            # directly add no-epi embedding (instead of using the transformer encoder)
+            pix_feat_with_epi_embed = current_vision_feats[-1] + self.no_epipolar_embed
+            pix_feat_with_epi_embed = pix_feat_with_epi_embed.permute(1, 2, 0).view(B, C, H, W)
+            return pix_feat_with_epi_embed
+
+        epi_feats = encoded_epipolar_dict["vision_features"].to(device, non_blocking=True)
+        epi_feats = epi_feats.flatten(2).permute(2, 0, 1)
+        # Spatial positional encoding (it might have been offloaded to CPU in eval)
+        epi_pos_enc = encoded_epipolar_dict["vision_pos_enc"][-1].to(device)
+        epi_pos_enc = epi_pos_enc.flatten(2).permute(2, 0, 1)
+
+        # Step 2: Concatenate the memories and forward through the transformer encoder
+
+        # Step 3: Linear - max pool projection of object mask-memories
+        # epi_feats = self.multi_object_memory_proj(epi_feats.mT).mT  #TODO we need another layer for epipolar
+        # epi_pos_enc = self.multi_object_memory_pos_proj(epi_pos_enc.mT).mT  #TODO we need another layer for epipolar
+
+        pix_feat_with_mem = self.epipolar_attention(
+            curr=current_vision_feats,
+            curr_pos=current_vision_pos_embeds,
+            epi_feats=epi_feats,
+            epi_pos_enc=epi_pos_enc,
+            num_obj_ptr_tokens=0,  # no object pointers in epipolar attention
+        )
+        # reshape the output (HW)BC => BCHW
+        pix_feat_with_mem = pix_feat_with_mem.permute(1, 2, 0).view(B, C, H, W)
+        return pix_feat_with_mem
+
     def _prepare_memory_conditioned_features(
         self,
         frame_idx,
@@ -664,7 +716,7 @@ class SAM2FormerBase(torch.nn.Module):
             mask_for_mem = mask_for_mem * self.sigmoid_scale_for_mem_enc
         if self.sigmoid_bias_for_mem_enc != 0.0:
             mask_for_mem = mask_for_mem + self.sigmoid_bias_for_mem_enc
-        # Transpose the batch and channel dimensions to have a smooth usage of sam2 encoder
+        # HEADS UP: Transpose the batch and channel dimensions to have a smooth usage of sam2 encoder
         mask_for_mem = mask_for_mem.transpose(0, 1)
         maskmem_out = self.memory_encoder(
             pix_feat, mask_for_mem, skip_mask_sigmoid=True  # sigmoid already applied
@@ -690,14 +742,12 @@ class SAM2FormerBase(torch.nn.Module):
         current_vision_feats,
         current_vision_pos_embeds,
         feat_sizes,
-        # point_inputs,
-        # mask_inputs,
         output_dict,
+        encoded_epipolar_dict,
         num_frames,
         track_in_reverse,
         prev_sam_mask_logits,
     ):
-        # current_out = {"point_inputs": point_inputs, "mask_inputs": mask_inputs}
         current_out = {}
         # High-resolution feature maps for the SAM head, reshape (HW)BC => BCHW
         if len(current_vision_feats) > 1:
@@ -735,14 +785,25 @@ class SAM2FormerBase(torch.nn.Module):
             # if prev_sam_mask_logits is not None:
             #     assert point_inputs is not None and mask_inputs is None
             #     mask_inputs = prev_sam_mask_logits
-        #TODO epipolar fusion
+
+        # Epipolar lines fusion
+        if self.multiview:
+            pix_feat = self._prepare_epipolar_conditioned_features(
+                frame_idx=frame_idx,
+                is_init_cond_frame=is_init_cond_frame,
+                current_vision_feats=current_vision_feats[-1:],
+                current_vision_pos_embeds=current_vision_pos_embeds[-1:],
+                feat_sizes=feat_sizes[-1:],
+                encoded_epipolar_dict=encoded_epipolar_dict,
+            )
+
         sam_outputs = self._forward_sam_heads(
                 backbone_features=pix_feat,
                 # point_inputs=point_inputs,
                 # mask_inputs=mask_inputs,
                 high_res_features=high_res_features,
             )
-        
+
         # Deep supervision is not used for batch size > 1, remove auxillary outputs
         if pix_feat.shape[0] > 1 or num_frames > 1:
             sam_outputs = sam_outputs[:-1] + (None,)

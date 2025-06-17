@@ -88,7 +88,17 @@ def load_state_dict_into_model(
     # Get the state dict keys remove memory encider from the name
     memory_encoder_sd = {'.'.join(key.split('.')[1:]) : value for key, value in state_dict.items() if key.startswith('memory_encoder')}
     model.epipolar_encoder.load_state_dict(memory_encoder_sd, strict=True) if epipolar_sd_missing else None
-    
+
+    # Check if the epipolar attention state dict exists, if not load the memory attention state dict
+    len_missing_keys = len(missing_keys)
+    missing_keys = [k for k in missing_keys 
+                    if not k.startswith("epipolar_attention")]
+    epipolar_attn_sd_missing = len_missing_keys - len(missing_keys) > 0
+    # For epipolar attention we use the same structure as the memory attention
+    # Get the state dict keys remove memory attention from the name
+    memory_attention_sd = {'.'.join(key.split('.')[1:]) : value for key, value in state_dict.items() if key.startswith('memory_attention')}
+    model.epipolar_attention.load_state_dict(memory_attention_sd, strict=True) if epipolar_attn_sd_missing else None
+
     # For the parameters no_epipolar_embed and no_epipolar_pos_enc load the no_mem_embed and no_mem_pos_enc
     len_missing_keys = len(missing_keys)
     missing_keys = [k for k in missing_keys 

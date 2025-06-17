@@ -216,6 +216,40 @@ trainer:
           use_dwconv: True  # depth-wise convs
         num_layers: 2
 
+    # Epipolar Attention
+    epipolar_attention:
+      _target_: custom_models.models.sam2former.epipolar_attention.EpipolarAttention
+      d_model: 256
+      pos_enc_at_input: true
+      layer:
+        _target_: custom_models.models.sam2former.epipolar_attention.EpipolarAttentionLayer
+        activation: relu
+        dim_feedforward: 2048
+        dropout: 0.1
+        pos_enc_at_attn: false
+        self_attention:
+          _target_: sam2.modeling.sam.transformer.RoPEAttention
+          rope_theta: 10000.0
+          feat_sizes: [64, 64]
+          embedding_dim: 256
+          num_heads: 1
+          downsample_rate: 1
+          dropout: 0.1
+        d_model: 256
+        pos_enc_at_cross_attn_keys: true
+        pos_enc_at_cross_attn_queries: false
+        cross_attention:
+          _target_: sam2.modeling.sam.transformer.RoPEAttention
+          rope_theta: 10000.0
+          feat_sizes: [64, 64]
+          rope_k_repeat: True
+          embedding_dim: 256
+          num_heads: 1
+          downsample_rate: 1
+          dropout: 0.1
+          kv_in_dim: 64
+      num_layers: 4
+
     num_maskmem: 7
     image_size: ${scratch.resolution}
     # apply scaled sigmoid on mask logits for memory encoder, and directly feed input mask as output mask
