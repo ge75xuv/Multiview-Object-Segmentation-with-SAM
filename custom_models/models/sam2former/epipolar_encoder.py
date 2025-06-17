@@ -178,4 +178,4 @@ class EpipolarEncoder(nn.Module):
 
         pos = self.position_encoding(x).to(x.dtype)
 
-        return {"vision_features": x, "vision_pos_enc": [pos]}
+        return {"epi_vision_features": x, "epi_vision_pos_enc": [pos]}

@@ -199,13 +199,15 @@ class SAM2FormerBase(torch.nn.Module):
         self.multiview = multiview
         if self.multiview:
             self.epipolar_attention = epipolar_attention
+            # Epipolar projection for multiobject
+            self.multi_object_epi_proj = torch.nn.Linear(num_queries,1)
+            self.multi_object_epi_pos_proj = torch.nn.Linear(num_queries,1)
+            # A single token to indicate no memory embedding from previous frames
+            self.no_epipolar_embed = torch.nn.Parameter(torch.zeros(1, 1, self.hidden_dim))
+            self.no_epipolar_pos_enc = torch.nn.Parameter(torch.zeros(1, 1, self.hidden_dim))
         else:
             self.epipolar_attention = None
             del epipolar_attention  # avoid unused argument warning
-
-        # A single token to indicate no memory embedding from previous frames
-        self.no_epipolar_embed = torch.nn.Parameter(torch.zeros(1, 1, self.hidden_dim))
-        self.no_epipolar_pos_enc = torch.nn.Parameter(torch.zeros(1, 1, self.hidden_dim))
 
         # Model compilation
         if compile_image_encoder:
@@ -471,19 +473,17 @@ class SAM2FormerBase(torch.nn.Module):
             pix_feat_with_epi_embed = pix_feat_with_epi_embed.permute(1, 2, 0).view(B, C, H, W)
             return pix_feat_with_epi_embed
 
-        epi_feats = encoded_epipolar_dict["vision_features"].to(device, non_blocking=True)
+        epi_feats = encoded_epipolar_dict["epi_vision_features"].to(device, non_blocking=True)
         epi_feats = epi_feats.flatten(2).permute(2, 0, 1)
         # Spatial positional encoding (it might have been offloaded to CPU in eval)
-        epi_pos_enc = encoded_epipolar_dict["vision_pos_enc"][-1].to(device)
+        epi_pos_enc = encoded_epipolar_dict["epi_vision_pos_enc"][-1].to(device)
         epi_pos_enc = epi_pos_enc.flatten(2).permute(2, 0, 1)
 
-        # Step 2: Concatenate the memories and forward through the transformer encoder
+        # Step 2: Max pool projection of object mask-memories
+        # epi_feats = self.multi_object_epi_proj(epi_feats.mT).mT
+        # epi_pos_enc = self.multi_object_epi_pos_proj(epi_pos_enc.mT).mT
 
-        # Step 3: Linear - max pool projection of object mask-memories
-        # epi_feats = self.multi_object_memory_proj(epi_feats.mT).mT  #TODO we need another layer for epipolar
-        # epi_pos_enc = self.multi_object_memory_pos_proj(epi_pos_enc.mT).mT  #TODO we need another layer for epipolar
-
-        pix_feat_with_mem = self.epipolar_attention(
+        pix_feat_with_epi = self.epipolar_attention(
             curr=current_vision_feats,
             curr_pos=current_vision_pos_embeds,
             epi_feats=epi_feats,
@@ -491,8 +491,8 @@ class SAM2FormerBase(torch.nn.Module):
             num_obj_ptr_tokens=0,  # no object pointers in epipolar attention
         )
         # reshape the output (HW)BC => BCHW
-        pix_feat_with_mem = pix_feat_with_mem.permute(1, 2, 0).view(B, C, H, W)
-        return pix_feat_with_mem
+        pix_feat_with_epi = pix_feat_with_epi.permute(1, 2, 0).view(B, C, H, W)
+        return pix_feat_with_epi
 
     def _prepare_memory_conditioned_features(
         self,
@@ -791,7 +791,7 @@ class SAM2FormerBase(torch.nn.Module):
             pix_feat = self._prepare_epipolar_conditioned_features(
                 frame_idx=frame_idx,
                 is_init_cond_frame=is_init_cond_frame,
-                current_vision_feats=current_vision_feats[-1:],
+                current_vision_feats=pix_feat,  # NOTE use the output of memory attention
                 current_vision_pos_embeds=current_vision_pos_embeds[-1:],
                 feat_sizes=feat_sizes[-1:],
                 encoded_epipolar_dict=encoded_epipolar_dict,

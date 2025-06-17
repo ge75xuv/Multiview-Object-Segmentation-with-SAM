@@ -71,11 +71,14 @@ def load_state_dict_into_model(
     missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
     # Ignore check_load_state_dict_errors
     missing_keys = [k for k in missing_keys if not (k.startswith("sam_mask_decoder") or
-                                                  k.startswith("multi_object_memory"))
+                                                  k.startswith("multi_object_memory") or  # Custom multi-object memory
+                                                  k.startswith("multi_object_epi"))  # Custom multi-object epipolar
                     ]
+
+    # Parts that do not belong to the model anymore
     unexpected_keys = [k for k in unexpected_keys 
-                       if not (k.startswith("sam_mask_decoder") or 
-                               k.startswith("sam_prompt_encoder") or 
+                       if not (k.startswith("sam_mask_decoder") or
+                               k.startswith("sam_prompt_encoder") or
                                k.startswith("memory"))
                        ]
 

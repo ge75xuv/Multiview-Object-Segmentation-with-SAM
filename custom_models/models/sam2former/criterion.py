@@ -186,8 +186,8 @@ class SetCriterion(nn.Module):
         self.deep_supervision = deep_supervision
         self.pointwise_mask = pointwise_mask
         if not pointwise_mask:
-            # self.resize_target_ = Resize((64, 64))
-            self.resize_target_ = Resize((128, 128))
+            self.resize_target_ = Resize((64, 64))
+            # self.resize_target_ = Resize((128, 128))
 
     def loss_labels(self, outputs, targets, indices, num_masks):
         """Classification loss (NLL)

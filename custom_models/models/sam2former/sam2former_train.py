@@ -121,7 +121,9 @@ class SAM2FormerTrain(SAM2FormerBase):
             del epipolar_encoder  # avoid unused argument warning
 
     def forward(self, input: BatchedVideoDatapoint):
+        num_frames = input.num_frames if not self.multiview else input[0].num_frames
         if not self.multiview and (self.training or not self.forward_backbone_per_frame_for_eval):
+        # if num_frames == 1 and (self.training or not self.forward_backbone_per_frame_for_eval):
             # precompute image features on all frames before tracking
             # input.img_batch.shape = (num_frames, B, 3, H, W)
             # input.flat_img_batch = (B * num_frames, 3, H, W)

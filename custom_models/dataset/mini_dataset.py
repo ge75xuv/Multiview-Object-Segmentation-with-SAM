@@ -234,15 +234,15 @@ class MiniDataset(Dataset):
             self.split_type = split_type
 
     def __len__(self):
-        if self.split_type == 'train' and self.small_onject_refinement:  # TODO DELETE AFTER
-            return len(self.indeces)
+        # if self.split_type == 'train' and self.small_onject_refinement:  # TODO DELETE AFTER
+        #     return len(self.indeces)
         if self.multiview:
             return len(self.segmentation_masks) // 3
         return len(self.segmentation_masks)
 
     def __getitem__(self, index):
         # Get file paths
-        index = self.indeces[index] if self.small_onject_refinement else index  # TODO DELETE AFTER
+        # index = self.indeces[index] if self.small_onject_refinement else index  # TODO DELETE AFTER
         indeces = index * 3 + np.array([0, 1, 2]) if self.multiview else [index]
         img_view_container = []
         take_name = str(self.images[indeces[0]][0]).split('/')[-3]  # View Index:0 Frame Index:0
