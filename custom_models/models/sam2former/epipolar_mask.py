@@ -5,8 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-# OBJECTS_EPIPOLAR = [10, 12]
-OBJECTS_EPIPOLAR = [10]
+from custom_models.helpers.configurations import OBJECTS_EPIPOLAR, LABEL_PROJECTION_MAP
 
 VIEW_COMBINATIONS = {
     0: ["epi_lines_1_to_0", "epi_lines_2_to_0"],
@@ -209,20 +208,42 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
     pred_class2 = torch.Tensor(predictions2['pred_logits']).softmax(dim=-1).argmax(dim=-1)
 
     # Initialize the masks
-    h, w = predictions0['pred_masks_high_res'].shape[-2:]
-    masks = torch.zeros([len(OBJECTS_EPIPOLAR), 3, h, w], dtype=torch.float32)
+    o, h, w = predictions0['pred_masks_high_res'].shape[-3:]
+    unique_projected_labels = set([obj['label'] for obj in LABEL_PROJECTION_MAP.values()])
+    masks = torch.zeros([len(unique_projected_labels), 3, h, w], dtype=torch.float32)
+
+    # Object position dictionary
+    object_pos = {view_idx:{pos_idx:99 for pos_idx in range(o)} for view_idx in range(3)}
 
     # Iterate over the objects of interest and get the masks.
-    for ii, obj_idx in enumerate(OBJECTS_EPIPOLAR):
+    for obj_idx in LABEL_PROJECTION_MAP.values():
+        # Get the object index from the label projection map
+        obj_idx = obj_idx['label']
+
         # Find the positions of the object in each camera's predictions
         pos_obj0 = torch.where(pred_class0 == obj_idx)  # pos_obj0 is a tuple of (batch_idx, class_idx)
         pos_obj1 = torch.where(pred_class1 == obj_idx)  # pos_obj1 is a tuple of (batch_idx, class_idx)
         pos_obj2 = torch.where(pred_class2 == obj_idx)  # pos_obj2 is a tuple of (batch_idx, class_idx)
 
+        # Put the obj_idx in the corresponding position fromkeys in case there are multiple instances
+        object_pos[0].update(dict.fromkeys(pos_obj0[1].tolist(), obj_idx))
+        object_pos[1].update(dict.fromkeys(pos_obj1[1].tolist(), obj_idx))
+        object_pos[2].update(dict.fromkeys(pos_obj2[1].tolist(), obj_idx))
+
+        # Save what position contains what object 
+        # object_pos[0][obj_idx] = pos_obj0[1].tolist()
+        # object_pos[1][obj_idx] = pos_obj1[1].tolist()
+        # object_pos[2][obj_idx] = pos_obj2[1].tolist()
+
+        # Get the position and continue if the object is not epipolarly tracked
+        if obj_idx not in OBJECTS_EPIPOLAR:
+            masks[obj_idx] = torch.zeros([3, h, w], dtype=torch.float32)
+            continue
+
         # Get the masks for the first three cameras
-        mask_cam0 = predictions0['pred_masks_high_res'][pos_obj0].squeeze(0)  # Slice the correct objects
-        mask_cam1 = predictions1['pred_masks_high_res'][pos_obj1].squeeze(0)  # from the indeces
-        mask_cam2 = predictions2['pred_masks_high_res'][pos_obj2].squeeze(0)
+        mask_cam0 = predictions0['pred_masks_high_res'][pos_obj0].sum(dim=0, keepdim=False)  # Slice the correct objects from the indeces.
+        mask_cam1 = predictions1['pred_masks_high_res'][pos_obj1].sum(dim=0, keepdim=False)  # Sum is only needed if multiple
+        mask_cam2 = predictions2['pred_masks_high_res'][pos_obj2].sum(dim=0, keepdim=False)  # instances of the same object.
 
         # Preprocess the masks to get points
         pts_cam0, pts_cam1, pts_cam2 = epipolar_mask_preprocess(mask_cam0, mask_cam1, mask_cam2, num_points_idx=-1)
@@ -232,8 +253,8 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
 
         # Epipolar mask post processing
         mask = epipolar_mask_post_process(epi_mask_for_views, mask_cam0.shape[-2:])
-        masks[ii] = mask
-    return masks
+        masks[obj_idx] = mask
+    return masks, object_pos
 
 
 if __name__ == '__main__':
@@ -256,17 +277,25 @@ if __name__ == '__main__':
 
     # Reshape the logits
     pred_class = torch.Tensor(predictions['pred_logits']).softmax(dim=-1).argmax(dim=-1)
+
+    OBJECTS_EPIPOLAR = [6]  # NOTE: Test for multi instances
+
     for obj_idx in OBJECTS_EPIPOLAR:
-        index_10 = torch.where(pred_class == obj_idx)
-        cam0_ids = index_10[1][2]  # It is a tuple of batch index and class index, 
-        cam1_ids = index_10[1][3]  # so we need to access the second element
-        cam2_ids = index_10[1][4]
+        # NOTE by visial observation, we know that the first camera is the 1st in the batch
+        cam0_ids = torch.where(pred_class[0] == obj_idx)[0]
+        cam1_ids = torch.where(pred_class[1] == obj_idx)[0]
+        cam2_ids = torch.where(pred_class[2] == obj_idx)[0]
 
         # Get the masks for the first three cameras
         # NOTE by visial observation, we know that the first camera is the 1st in the batch
-        mask_cam0 = torch.Tensor(predictions['pred_masks_high_res'][0])[cam0_ids, :, :]  # Slice the correct objects
-        mask_cam1 = torch.Tensor(predictions['pred_masks_high_res'][1])[cam1_ids, :, :]  # from the indeces
-        mask_cam2 = torch.Tensor(predictions['pred_masks_high_res'][2])[cam2_ids, :, :]
+        mask_cam0 = torch.Tensor(predictions['pred_masks_high_res'][0])[tuple(cam0_ids), :, :]  # Slice the correct objects
+        mask_cam1 = torch.Tensor(predictions['pred_masks_high_res'][1])[tuple(cam1_ids), :, :]  # from the indeces
+        mask_cam2 = torch.Tensor(predictions['pred_masks_high_res'][2])[tuple(cam2_ids), :, :]
+
+        # In case multiple instances of the same object, sum every instance together
+        mask_cam0 = mask_cam0.sum(dim=0, keepdim=False)
+        mask_cam1 = mask_cam1.sum(dim=0, keepdim=False)
+        mask_cam2 = mask_cam2.sum(dim=0, keepdim=False)
 
         # NOTE: test lacking visibility
         # mask_cam0 = torch.zeros_like(mask_cam0)
@@ -275,7 +304,7 @@ if __name__ == '__main__':
         pts_cam0, pts_cam1, pts_cam2 = epipolar_mask_preprocess(mask_cam0, mask_cam1, mask_cam2, num_points_idx=-1)
 
         # Run the epipolar mask function
-        epi_mask_for_views, test1, test2 = epipolar_mask(camera_int_ext, pts_cam0, pts_cam1, pts_cam2, mask_cam0.shape[-2:])
+        epi_mask_for_views = epipolar_mask(camera_int_ext, pts_cam0, pts_cam1, pts_cam2, mask_cam0.shape[-2:])
 
         # Epipolar mask post processing
         masks = epipolar_mask_post_process(epi_mask_for_views, mask_cam0.shape[-2:])

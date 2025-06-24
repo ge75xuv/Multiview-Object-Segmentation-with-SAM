@@ -18,6 +18,7 @@ from sam2.modeling.sam2_utils import get_1d_sine_pe, MLP, select_closest_cond_fr
 
 from .lib import ShapeSpec
 from .mask_former_head import MaskFormerHead
+from custom_models.helpers.configurations import OBJECTS_EPIPOLAR
 
 # a large negative value as a placeholder score for missing objects
 NO_OBJ_SCORE = -1024.0
@@ -462,26 +463,39 @@ class SAM2FormerBase(torch.nn.Module):
         encoded_epipolar_dict,
     ):
         """Fuse the current frame's visual feature map with previous epipolar features."""
-        B = current_vision_feats[-1].size(1)  # batch size on this frame
+        # The shape is changed in the memory encoding, change it back to default.
+        current_vision_feats = current_vision_feats.flatten(2).permute(2, 0, 1)
+        B = current_vision_feats.size(1)  # batch size on this frame
         C = self.hidden_dim
         H, W = feat_sizes[-1]  # top-level (lowest-resolution) feature size
         device = current_vision_feats[-1].device
         if is_init_cond_frame:
             assert len(encoded_epipolar_dict) == 0, "No epipolar features should be provided for the initial conditioning frame."
             # directly add no-epi embedding (instead of using the transformer encoder)
-            pix_feat_with_epi_embed = current_vision_feats[-1] + self.no_epipolar_embed
+            pix_feat_with_epi_embed = current_vision_feats + self.no_epipolar_embed
             pix_feat_with_epi_embed = pix_feat_with_epi_embed.permute(1, 2, 0).view(B, C, H, W)
             return pix_feat_with_epi_embed
 
+        # Step 0: Get the epipolar features
         epi_feats = encoded_epipolar_dict["epi_vision_features"].to(device, non_blocking=True)
         epi_feats = epi_feats.flatten(2).permute(2, 0, 1)
         # Spatial positional encoding (it might have been offloaded to CPU in eval)
-        epi_pos_enc = encoded_epipolar_dict["epi_vision_pos_enc"][-1].to(device)
+        epi_pos_enc = encoded_epipolar_dict["epi_vision_pos_enc"].to(device)
         epi_pos_enc = epi_pos_enc.flatten(2).permute(2, 0, 1)
 
+        # Step 1: Get the object positions, dict of obj label as keys and their positions as values
+        object_pos = encoded_epipolar_dict['object_positions']
+        object_pos = list(object_pos.values())
+
+        # Step 2: Put each object in their detection (query) order. (This step is also copies object features for multiple instances of the same object)
+        epi_feats = epi_feats[:, object_pos]
+        epi_pos_enc = epi_pos_enc[:, object_pos]
+
+        #TODO: The memory has a bias around 20, apply the same for the epipolar features (Check epipolar encoding)
+
         # Step 2: Max pool projection of object mask-memories
-        # epi_feats = self.multi_object_epi_proj(epi_feats.mT).mT
-        # epi_pos_enc = self.multi_object_epi_pos_proj(epi_pos_enc.mT).mT
+        epi_feats = self.multi_object_epi_proj(epi_feats.mT).mT
+        epi_pos_enc = self.multi_object_epi_pos_proj(epi_pos_enc.mT).mT
 
         pix_feat_with_epi = self.epipolar_attention(
             curr=current_vision_feats,
@@ -670,6 +684,7 @@ class SAM2FormerBase(torch.nn.Module):
 
         # Step 3: Linear - max pool projection of object mask-memories
         memory = self.multi_object_memory_proj(memory.mT).mT
+        # memory_pos_embed = ememory_pos_embed[:, 0]  # TODO Position embeddings are the same so you can just use the first one
         memory_pos_embed = self.multi_object_memory_pos_proj(memory_pos_embed.mT).mT
 
         pix_feat_with_mem = self.memory_attention(

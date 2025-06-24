@@ -173,12 +173,6 @@ TRACK_TO_METAINFO = {
 }
 
 LABEL_PROJECTION_MAP = {
-    # DEBUG FOR OVERTRAINING
-    # 10: {'color': (76, 161, 245), 'label': 0},
-    # 13: {'color': (0, 255, 128), 'label': 1},
-    # 15: {'color': (204, 0, 0), 'label': 2},
-    # 16: {'color': (0, 255, 234), 'label': 3},
-
     # TRUE PROJECTION
     # 1: {'color': (255, 51, 153), 'label': 0},
     # 2: {'color': (0, 0, 255), 'label': 1},
@@ -229,3 +223,16 @@ LABEL_PROJECTION_MAP = {
     28: {'color': (153, 0, 153), 'label': 14},   # 'secondary_table'
     29: {'color': (153, 76, 0), 'label': 15},    # 'cementer'
 }
+
+# These are the objects that are used for epipolar projection
+OBJECTS_EPIPOLAR = [
+    0,  # Instrument Table
+    4,  # Patient
+    6,  # Human
+    7,  # Drill
+    8,  # Hammer
+    9,  # Saw
+    10,  # Tracker
+    11,  # Mako Robot
+    12,  # Monitor
+]
