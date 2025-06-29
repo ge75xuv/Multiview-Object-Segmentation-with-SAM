@@ -1,3 +1,6 @@
+#%%
+import os
+import sys
 import time
 from typing import List, Tuple, Optional, Dict
 
@@ -6,7 +9,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from custom_models.helpers.configurations import OBJECTS_EPIPOLAR, LABEL_PROJECTION_MAP
+print(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from helpers.configurations import OBJECTS_EPIPOLAR, LABEL_PROJECTION_MAP
 
 VIEW_COMBINATIONS = {
     0: ["epi_lines_1_to_0", "epi_lines_2_to_0"],
@@ -61,8 +66,7 @@ def intersection(a, b, c, k, l, m):
     y = torch.round((-c - a * x) / b).type(torch.int32)
     return torch.concatenate((x, y), axis=1)
 
-def single_epiline(_size: Tuple[int, int], lines: torch.Tensor):
-    step = 10  # Step size for sampling points along the epipolar line
+def single_epiline(_size: Tuple[int, int], lines: torch.Tensor, step: int = 10):
     h, w = _size
     # eval_func = lambda x: (-lines[:, 2] - lines[:, 0] * x) / lines[:, 1]  # It moves the points cpu if previously in cuda.
     def eval_func2(x):
@@ -75,6 +79,27 @@ def single_epiline(_size: Tuple[int, int], lines: torch.Tensor):
     print(f"Time taken for epipolar line sampling (eval_func2): {time.time() - start_time2:.4f} seconds")
     return pts
 
+def random_sample_mask_points(mask: torch.Tensor, n_points: int, threshold: float = 0.5) -> Optional[torch.Tensor]:
+    # Handle multi-channel masks by summing across channels
+    binary_mask = torch.sum(mask.sigmoid() > threshold, dim=0)
+
+    # Get all valid pixel coordinates
+    y, x = torch.where(binary_mask)
+
+    if len(x) == 0:
+        return None
+
+    # If we have fewer points than requested, return all available points
+    if len(x) <= n_points:
+        return torch.cat([x.unsqueeze(1), y.unsqueeze(1)], dim=1)
+
+    # Randomly sample n_points indices
+    indices = torch.randperm(len(x))[:n_points]
+    sampled_x = x[indices]
+    sampled_y = y[indices]
+
+    return torch.cat([sampled_x.unsqueeze(1), sampled_y.unsqueeze(1)], dim=1)
+
 @torch.no_grad()
 def epipolar_mask_preprocess(
     mask_cam0: torch.Tensor,
@@ -84,17 +109,22 @@ def epipolar_mask_preprocess(
     ):
     # Another reason for us to use temporality. It is not possible to make a differentiable masking here
     # The batch operation for different objects cannot be done here since the size of the masks are going to be varying size
-    summed_binary_mask0 = torch.sum(mask_cam0.sigmoid() > 0.5, dim=0)
-    y, x = torch.where(summed_binary_mask0)  # Is torch where a problem for the gradients? Yes
-    pts_cam0 = torch.cat([x.unsqueeze(1), y.unsqueeze(1)], dim=1)[0:num_points_idx] if len(x) > 0 else None
+    n_points = 4096
+    # summed_binary_mask0 = torch.sum(mask_cam0.sigmoid() > 0.5, dim=0)
+    # y, x = torch.where(summed_binary_mask0)  # Is torch where a problem for the gradients? Yes
+    # pts_cam0 = torch.cat([x.unsqueeze(1), y.unsqueeze(1)], dim=1)[0:num_points_idx] if len(x) > 0 else None
+    pts_cam0 = random_sample_mask_points(mask_cam0, n_points=n_points, threshold=0.5)
 
-    summed_binary_mask1 = torch.sum(mask_cam1.sigmoid() > 0.5, dim=0)
-    y, x = torch.where(summed_binary_mask1)  # Is torch where a problem for the gradients? Yes
-    pts_cam1 = torch.cat([x.unsqueeze(1), y.unsqueeze(1)], dim=1)[0:num_points_idx] if len(x) > 0 else None
+    # summed_binary_mask1 = torch.sum(mask_cam1.sigmoid() > 0.5, dim=0)
+    # y, x = torch.where(summed_binary_mask1)  # Is torch where a problem for the gradients? Yes
+    # pts_cam1 = torch.cat([x.unsqueeze(1), y.unsqueeze(1)], dim=1)[0:num_points_idx] if len(x) > 0 else None
+    pts_cam1 = random_sample_mask_points(mask_cam1, n_points=n_points, threshold=0.5)
 
-    summed_binary_mask2 = torch.sum(mask_cam2.sigmoid() > 0.5, dim=0)
-    y, x = torch.where(summed_binary_mask2)  # Is torch where a problem for the gradients? Yes
-    pts_cam2 = torch.cat([x.unsqueeze(1), y.unsqueeze(1)], dim=1)[0:num_points_idx] if len(x) > 0 else None
+    # summed_binary_mask2 = torch.sum(mask_cam2.sigmoid() > 0.5, dim=0)
+    # y, x = torch.where(summed_binary_mask2)  # Is torch where a problem for the gradients? Yes
+    # pts_cam2 = torch.cat([x.unsqueeze(1), y.unsqueeze(1)], dim=1)[0:num_points_idx] if len(x) > 0 else None
+    pts_cam2 = random_sample_mask_points(mask_cam2, n_points=n_points, threshold=0.5)    
+
     return pts_cam0, pts_cam1, pts_cam2
 
 def epipolar_mask_post_process(
@@ -103,28 +133,28 @@ def epipolar_mask_post_process(
     epipolar_weight: float = 0.5
 ):
     mask = torch.zeros([3, _size[0], _size[1]], dtype=torch.float32)
-    # epi_masks keys for views and values are the intersection points and the case weights
+    # epi_masks keys for views and values are the intersection points from 2 other views
     # We use points as indices to fill the mask, so seperate them as x y convert them to tuples
     # First view
     pix_coords0 = epi_masks_for_views[0][0]
     pix_coords1 = epi_masks_for_views[0][1]
-    pos_x, pos_y = pix_coords0[:,0].tolist(), pix_coords0[:,1].tolist() if pix_coords0.nelement() != 0 else ([], [])
+    pos_x, pos_y = (pix_coords0[:,0].tolist(), pix_coords0[:,1].tolist()) if pix_coords0.nelement() != 0 else ([], [])
     mask[0, pos_y, pos_x] += epipolar_weight
-    pos_x, pos_y = pix_coords1[:,0].tolist(), pix_coords1[:,1].tolist() if pix_coords1.nelement() != 0 else ([], [])
+    pos_x, pos_y = (pix_coords1[:,0].tolist(), pix_coords1[:,1].tolist()) if pix_coords1.nelement() != 0 else ([], [])
     mask[0, pos_y, pos_x] += epipolar_weight
     # Second view
     pix_coords0 = epi_masks_for_views[1][0]
     pix_coords1 = epi_masks_for_views[1][1]
-    pos_x, pos_y = pix_coords0[:,0].tolist(), pix_coords0[:,1].tolist() if pix_coords0.nelement() != 0 else ([], [])
+    pos_x, pos_y = (pix_coords0[:,0].tolist(), pix_coords0[:,1].tolist()) if pix_coords0.nelement() != 0 else ([], [])
     mask[1, pos_y, pos_x] += epipolar_weight
-    pos_x, pos_y = pix_coords1[:,0].tolist(), pix_coords1[:,1].tolist() if pix_coords1.nelement() != 0 else ([], [])
+    pos_x, pos_y = (pix_coords1[:,0].tolist(), pix_coords1[:,1].tolist()) if pix_coords1.nelement() != 0 else ([], [])
     mask[1, pos_y, pos_x] += epipolar_weight
     # Third view
     pix_coords0 = epi_masks_for_views[2][0]
     pix_coords1 = epi_masks_for_views[2][1]
-    pos_x, pos_y = pix_coords0[:,0].tolist(), pix_coords0[:,1].tolist() if pix_coords0.nelement() != 0 else ([], [])
+    pos_x, pos_y = (pix_coords0[:,0].tolist(), pix_coords0[:,1].tolist()) if pix_coords0.nelement() != 0 else ([], [])
     mask[2, pos_y, pos_x] += epipolar_weight
-    pos_x, pos_y = pix_coords1[:,0].tolist(), pix_coords1[:,1].tolist() if pix_coords1.nelement() != 0 else ([], [])
+    pos_x, pos_y = (pix_coords1[:,0].tolist(), pix_coords1[:,1].tolist()) if pix_coords1.nelement() != 0 else ([], [])
     mask[2, pos_y, pos_x] += epipolar_weight
     return mask
 
@@ -181,7 +211,7 @@ def epipolar_mask(
     # test_img2 = draw_epilines(np.zeros((_size[0], _size[1], 1)), epi_lines_2_to_0, padding=0)
 
     # Put the lines in the form ax + by + c = 0
-    skip = 1
+    step = 5
     epi_masks_for_views = {}
     for view in [0, 1, 2]:
         _first_epi_lines = eval(VIEW_COMBINATIONS[view][0])
@@ -195,8 +225,8 @@ def epipolar_mask(
 
         # If both lines exist, compute the intersection
         elif _check_first == True and _check_second == True:
-            intersect_point1 = single_epiline(_size, _first_epi_lines)
-            intersect_point2 = single_epiline(_size, _second_epi_lines)
+            intersect_point1 = single_epiline(_size, _first_epi_lines, step)
+            intersect_point2 = single_epiline(_size, _second_epi_lines, step)
 
             # inter_Time = time.time()
             # a, b, c = _first_epi_lines.T[:, ::skip]
@@ -290,7 +320,7 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
         masks[obj_idx] = mask
     return masks, object_pos_label
 
-
+#%%
 if __name__ == '__main__':
     import json
 
@@ -312,7 +342,7 @@ if __name__ == '__main__':
     # Reshape the logits
     pred_class = torch.Tensor(predictions['pred_logits']).softmax(dim=-1).argmax(dim=-1)
 
-    # OBJECTS_EPIPOLAR = [10]  # NOTE: Test for multi instances
+    OBJECTS_EPIPOLAR = [17]  # NOTE: Test for multi instances
 
     for obj_idx in OBJECTS_EPIPOLAR:
         # NOTE by visial observation, we know that the first camera is the 1st in the batch
@@ -363,3 +393,4 @@ if __name__ == '__main__':
     # plt.imshow(masks[0].cpu().numpy(), cmap='gray')
     # plt.title('Epipolar Mask for View 0')
     # plt.show()
+# %%
