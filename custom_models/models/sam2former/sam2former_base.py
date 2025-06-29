@@ -206,6 +206,9 @@ class SAM2FormerBase(torch.nn.Module):
             # A single token to indicate no memory embedding from previous frames
             self.no_epipolar_embed = torch.nn.Parameter(torch.zeros(1, 1, self.hidden_dim))
             self.no_epipolar_pos_enc = torch.nn.Parameter(torch.zeros(1, 1, self.hidden_dim))
+            # No-epipolar embedding projection for no epipolar objects
+            self.no_epipolar_embed_proj = torch.nn.Linear(self.hidden_dim, self.mem_dim)
+            trunc_normal_(self.no_epipolar_embed_proj.weight, std=0.02)
         else:
             self.epipolar_attention = None
             del epipolar_attention  # avoid unused argument warning
@@ -477,28 +480,34 @@ class SAM2FormerBase(torch.nn.Module):
             return pix_feat_with_epi_embed
 
         # Step 0: Get the epipolar features
+        #TODO CHECK SHAPES AND WHY POS ENC IS A LIST
         epi_feats = encoded_epipolar_dict["epi_vision_features"].to(device, non_blocking=True)
         epi_feats = epi_feats.flatten(2).permute(2, 0, 1)
-        # Spatial positional encoding (it might have been offloaded to CPU in eval)
         epi_pos_enc = encoded_epipolar_dict["epi_vision_pos_enc"].to(device)
         epi_pos_enc = epi_pos_enc.flatten(2).permute(2, 0, 1)
 
         # Step 1: Get the object positions, dict of obj label as keys and their positions as values
-        object_pos = encoded_epipolar_dict['object_positions']
-        object_pos = list(object_pos.values())
+        object_pos_label = encoded_epipolar_dict['object_positions_labels']
+        ordered_obj_label = list(object_pos_label.values())
 
         # Step 2: Put each object in their detection (query) order. (This step is also copies object features for multiple instances of the same object)
-        epi_feats = epi_feats[:, object_pos]
-        epi_pos_enc = epi_pos_enc[:, object_pos]
+        epi_feats = epi_feats[:, ordered_obj_label]
+        epi_pos_enc = epi_pos_enc[:, ordered_obj_label]
 
-        #TODO: The memory has a bias around 20, apply the same for the epipolar features (Check epipolar encoding)
+        # Step 3: Add the no-epipolar embedding to the object that we dont calculate epipolars for
+        #NOTE THIS APPROACH IS NOT POSSIBLE SINCE THE EMBEDDING DIMENSIONS ARE NOT THE SAME (EPIPOLAR ENCODING CHANGES EMBEDDING DIMENSION)
+        multi_obj_no_epipolar_embed = torch.zeros_like(epi_feats)
+        no_epipolar_mask = [pos for pos, lbl in object_pos_label.items() if lbl not in OBJECTS_EPIPOLAR]
+        no_epipolar_object_embed = self.no_epipolar_embed_proj(self.no_epipolar_embed) 
+        multi_obj_no_epipolar_embed[:, no_epipolar_mask] = no_epipolar_object_embed
+        epi_feats += multi_obj_no_epipolar_embed
 
-        # Step 2: Max pool projection of object mask-memories
+        # Step 4: Max pool projection of object mask-memories
         epi_feats = self.multi_object_epi_proj(epi_feats.mT).mT
         epi_pos_enc = self.multi_object_epi_pos_proj(epi_pos_enc.mT).mT
 
         pix_feat_with_epi = self.epipolar_attention(
-            curr=current_vision_feats,
+            curr=[current_vision_feats],
             curr_pos=current_vision_pos_embeds,
             epi_feats=epi_feats,
             epi_pos_enc=epi_pos_enc,

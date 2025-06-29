@@ -14,7 +14,7 @@ from torch import nn
 from torchvision.transforms import Resize
 
 from .lib import get_world_size, point_sample, get_uncertain_point_coords_with_randomness
-
+from custom_models.helpers.configurations import OBJECT_FREQUENCY_PATH
 from .utils.misc import is_dist_avail_and_initialized, nested_tensor_from_tensor_list
 
 
@@ -145,20 +145,24 @@ class SetCriterion(nn.Module):
         empty_weight[-1] = self.eos_coef
 
         # Weights for object classes
-        frequency_file_path = Path('/home/guests/tuna_gurbuz/prototype/custom_models/helpers/frequencies_with_human.yaml')
+        frequency_file_path = OBJECT_FREQUENCY_PATH
         if frequency_file_path.exists() and loss_weighting != 'default':
             print('Frequency file exists. Using weights from frequency file')
-            label_frequency_type = 'human_labels' if num_classes == 16 else 'all_labels'
+            label_frequency_type = 'human_labels' if num_classes == 16 else 'all_labels'  #TODO: HARDCODED PUT IT TO THE CONFIG
             with open(frequency_file_path, 'r') as f:
                 class_freqs = yaml.safe_load(f)[label_frequency_type]
             weight_scales = {k: v[1] if len(v) == 2 else 1 for k, v in class_freqs.items()}
             class_freqs = {k: v[0] for k, v in class_freqs.items()}
+
+            # The original dataset has 6 different human labels, but we want to treat them as one class
+            # for the loss calculation, so we sum their frequencies and take the mean of their weight scales
             if label_frequency_type == 'human_labels':
                 human_freqs = sum([freq for k, freq in class_freqs.items() if k[0] == '6'])
                 human_weight_scale = statistics.mean([wg for k, wg in weight_scales.items() if k[0] == '6'])
                 class_freqs = {k: v for k, v in class_freqs.items() if k[0] != '6'}
                 weight_scales = {k: v for k, v in weight_scales.items() if k[0] != '6'}
                 class_freqs['6'] = human_freqs; weight_scales['6'] = human_weight_scale
+
             # Normalize the frequencies
             min_freq = min(v for v in class_freqs.values() if v != 0)
             normalized_freqs = {k: v / min_freq if v != 0 else 0 for k, v in class_freqs.items()}
@@ -186,7 +190,7 @@ class SetCriterion(nn.Module):
         self.deep_supervision = deep_supervision
         self.pointwise_mask = pointwise_mask
         if not pointwise_mask:
-            self.resize_target_ = Resize((64, 64))
+            self.resize_target_ = Resize((64, 64))  #TODO: HARDCODED PUT IT TO THE CONFIG
             # self.resize_target_ = Resize((128, 128))
 
     def loss_labels(self, outputs, targets, indices, num_masks):
@@ -360,7 +364,9 @@ class SetCriterion(nn.Module):
 
     def _calc_total_loss(self, loss_dict, *args):
         '''Calculate total loss from loss_dict with the given weight_dict. Index is passed as args 
-        to plausible match the corresponding losses
+        to plausible match the corresponding losses. Total loss is sum of individually weighted dice, focal and
+        ce losses. If args is empty, it means that we are calculating the total loss for the last layer.
+        If args is not empty, it means that we are calculating the total loss for the auxiliary layer.
         '''
         idx = '' if len(args) == 0 else f"_{args[0]}"
         total_loss = 0

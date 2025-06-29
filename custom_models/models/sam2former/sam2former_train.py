@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import time
 
 import numpy as np
 import torch
@@ -245,6 +246,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         camera_int_ext = input.camera_intrinsics_extrinsics if self.multiview else None
         feature_container_for_multiview_fusion = {}
         encoded_epipolar_dict = {0: {}, 1: {}, 2: {}}
+        # t_stage = time.time()
         for stage_id in processing_order:
             for view_idx, input in enumerate(view_inputs):
                 # Get the image features for the current frames
@@ -290,19 +292,23 @@ class SAM2FormerTrain(SAM2FormerBase):
 
                 # We need the vision features for epipolar encoding
                 if self.multiview:
-                    D, B, HW = current_vision_feats[-1].shape
+                    HW, B, D = current_vision_feats[-1].shape
                     H = W = torch.sqrt(torch.tensor(HW)).int()
                     last_vision_feat = current_vision_feats[-1].detach().clone()  #NOTE NOT SURE IF DETACH
-                    feature_container_for_multiview_fusion[view_idx] = last_vision_feat.transpose(1, 0).view(B, D, H, W)
+                    feature_container_for_multiview_fusion[view_idx] = last_vision_feat.permute(1, 2, 0).view(B, D, H, W)
             # end view loop
-
+            # print(f"Processed stage {stage_id} in {time.time() - t_stage:.2f} seconds")
             # Fuse the epipolar lines
             if self.multiview:
                 pred0 = output_dict[0]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[0]["non_cond_frame_outputs"][stage_id]
                 pred1 = output_dict[1]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[1]["non_cond_frame_outputs"][stage_id]
                 pred2 = output_dict[2]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[2]["non_cond_frame_outputs"][stage_id]
-                epipolar_masks, object_pos = epipolar_main(camera_int_ext, pred0, pred1, pred2)
+                t = time.time()
+                epipolar_masks, object_pos_label = epipolar_main(camera_int_ext, pred0, pred1, pred2)
+                print(f"Epipolar lines computed in {time.time() - t} seconds")  #TODO: make it faster
                 epipolar_masks = epipolar_masks.to(self.device)
+                # Scale the epipolar masks and add bias (Use the same scale and bias as in the memory encoder)
+                epipolar_masks = epipolar_masks.sigmoid() * self.sigmoid_scale_for_mem_enc + self.sigmoid_bias_for_mem_enc
                 pix_feat = torch.vstack(list(feature_container_for_multiview_fusion.values()))
                 # NOTE pix_feats = (3, 256, 16, 16), epipolar_masks = (O, 3, H, W)
                 # NOTE pix_feat_for_mem = (1, 256, 16, 16) mask_for_mem = (23, 1, 256, 256)
@@ -310,7 +316,7 @@ class SAM2FormerTrain(SAM2FormerBase):
                 for view_idx in range(3):
                     encoded_epipolars = self.epipolar_encoder(pix_feat[view_idx:view_idx+1], epipolar_masks[:,view_idx:view_idx+1])
                     # dictionary with keys "vision_features" and "vision_pos_enc"
-                    encoded_epipolars['object_positions'] = object_pos[view_idx]
+                    encoded_epipolars['object_positions_labels'] = object_pos_label[view_idx]
                     encoded_epipolar_dict[view_idx] = encoded_epipolars
 
         # end stage loop
