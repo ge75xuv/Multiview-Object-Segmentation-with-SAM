@@ -21,7 +21,7 @@ from sam2.modeling.sam2_utils import (
 from sam2.utils.misc import concat_points
 from training.utils.data_utils import BatchedVideoDatapoint
 
-from custom_models.models.sam2former.epipolar_mask import epipolar_main
+from custom_models.models.sam2former.epipolar_maskv2 import epipolar_main
 
 class SAM2FormerTrain(SAM2FormerBase):
     def __init__(

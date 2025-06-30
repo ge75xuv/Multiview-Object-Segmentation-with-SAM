@@ -465,7 +465,7 @@ trainer:
       state_dict:
         _target_: training.utils.checkpoint_utils.load_checkpoint_and_apply_kernels
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/models/sam2/checkpoints/sam2.1_hiera_base_plus.pt # PATH to SAM 2.1 checkpoint
-        checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/06_17_16_27/checkpoints/checkpoint_60.pt
+        checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/06_13_09_45/checkpoints/checkpoint_45.pt
         ckpt_state_dict_keys: ['model']
 
 launcher:
