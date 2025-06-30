@@ -15,7 +15,7 @@
             "console": "integratedTerminal",
             // "module": "custom_models.dataset.mini_dataset",
             // "module": "custom_models.train_sam_copy",
-            "module": "custom_models.models.sam2former.epipolar_mask",
+            "module": "custom_models.models.sam2former.epipolar_maskv2",
             // "module": "custom_models.train",
             // "module": "custom_models.sam2former_image_predictor",
             // "module": "custom_models.count_images",
