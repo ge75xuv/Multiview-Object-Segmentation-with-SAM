@@ -504,7 +504,8 @@ class SAM2FormerBase(torch.nn.Module):
 
         # Step 4: Max pool projection of object mask-memories
         epi_feats = self.multi_object_epi_proj(epi_feats.mT).mT
-        epi_pos_enc = self.multi_object_epi_pos_proj(epi_pos_enc.mT).mT
+        epi_pos_enc = epi_pos_enc[:, 0:1]
+        # epi_pos_enc = self.multi_object_epi_pos_proj(epi_pos_enc.mT).mT
 
         pix_feat_with_epi = self.epipolar_attention(
             curr=[current_vision_feats],
@@ -693,8 +694,8 @@ class SAM2FormerBase(torch.nn.Module):
 
         # Step 3: Linear - max pool projection of object mask-memories
         memory = self.multi_object_memory_proj(memory.mT).mT
-        # memory_pos_embed = ememory_pos_embed[:, 0]  # TODO Position embeddings are the same so you can just use the first one
-        memory_pos_embed = self.multi_object_memory_pos_proj(memory_pos_embed.mT).mT
+        memory_pos_embed = memory_pos_embed[:, 0:1]  # TODO Position embeddings are the same so you can just use the first one
+        # memory_pos_embed = self.multi_object_memory_pos_proj(memory_pos_embed.mT).mT
 
         pix_feat_with_mem = self.memory_attention(
             curr=current_vision_feats,
