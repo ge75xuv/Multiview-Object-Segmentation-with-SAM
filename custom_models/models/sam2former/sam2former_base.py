@@ -30,6 +30,7 @@ class SAM2FormerBase(torch.nn.Module):
         image_encoder,
         memory_attention,
         memory_encoder,
+        query_memory_fusion=None,
         multiview=False,
         epipolar_attention=None,
         mask_decoder_cfg: Dict[str, Any]=None,
@@ -192,9 +193,12 @@ class SAM2FormerBase(torch.nn.Module):
 
         # HEADS UP
         # Memory projection for multiobject
-        num_queries = self.sam_mask_decoder.predictor.num_queries
-        self.multi_object_memory_proj = torch.nn.Linear(num_queries,1)
-        self.multi_object_memory_pos_proj = torch.nn.Linear(num_queries,1)
+        if query_memory_fusion is None:
+            num_queries = self.sam_mask_decoder.predictor.num_queries
+            self.multi_object_memory_proj = torch.nn.Linear(num_queries,1)
+            self.multi_object_memory_pos_proj = torch.nn.Linear(num_queries,1)
+        else:
+            self.multi_object_memory_proj = query_memory_fusion
 
         # Part 5: Epipolar attention
         self.multiview = multiview
@@ -693,7 +697,10 @@ class SAM2FormerBase(torch.nn.Module):
         memory_pos_embed = torch.cat(to_cat_memory_pos_embed, dim=0)
 
         # Step 3: Linear - max pool projection of object mask-memories
-        memory = self.multi_object_memory_proj(memory.mT).mT
+        if False: 
+            memory = self.multi_object_memory_proj(memory.mT).mT
+        else:
+            memory = self.multi_object_memory_proj(memory.T).T
         memory_pos_embed = memory_pos_embed[:, 0:1]  # TODO Position embeddings are the same so you can just use the first one
         # memory_pos_embed = self.multi_object_memory_pos_proj(memory_pos_embed.mT).mT
 

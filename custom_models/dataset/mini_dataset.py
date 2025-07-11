@@ -73,7 +73,8 @@ class MiniDataset(Dataset):
         self.camera_features = {}
         
         # Include interpolated frames (Experimental)
-        include_interpolated = False if not self.multiview else True
+        # include_interpolated = False if not self.multiview else True
+        include_interpolated = False
 
         # Iterate over the take folders
         for take_name in split_folder_names:
@@ -83,7 +84,7 @@ class MiniDataset(Dataset):
             # Folder names
             json_path = root_path / 'take_jsons' / f'{take_name}.json'
             take_path = root_path / take_folder
-            print(f'Loading the take {take_name}!\n')
+            print(f'Loading the take {take_name}!')
             
             # Read MMOR/Simstation JSON file for timestamps and image paths
             with json_path.open() as f:
@@ -108,7 +109,7 @@ class MiniDataset(Dataset):
                         take_images[c_idx].append(rgb_path)
                         take_seg_masks[c_idx].append(interpolated_mask_path)
 
-                # Break if the azure images are not available in the multiview run
+                # NOTE Multiview is experimental and tested with azure cameras only
                 if len(take_seg_masks[1]) == 0 and self.multiview:
                     break
 
@@ -127,10 +128,9 @@ class MiniDataset(Dataset):
                             take_images[c_idx].append(simstation_rgb_path)
                             take_seg_masks[c_idx].append(simstation_interpolated_mask_path)
 
-            # NOTE Multiview is experimental and tested with azure cameras only
             if self.multiview and flag_simstation:
-                break
-            elif self.multiview:
+                continue
+            if self.multiview and not flag_simstation:
                 camera_files = ['camera01.json', 'camera04.json', 'camera05.json']
                 # camera_files = [f'camera0{c_idx}.json' for c_idx in [1, 4, 5]] if flag_simstation else [f'camera0{c_idx}.json' for c_idx in [0, 2, 3]]
                 camera_int_ext = []
@@ -140,6 +140,14 @@ class MiniDataset(Dataset):
                     intr, ext, padding, dist, depth_ext = load_camera_data(camera_data, scaling_factor)
                     camera_int_ext.append((intr, ext))
                     self.camera_features[take_folder] = camera_int_ext
+
+            # For multiview we get only the mututal timestamps
+            if self.multiview:
+                time_ids = {k: [str(path).split('/')[-1].split('_')[1].split('.')[0] for path in take_images[k]] for k in take_images.keys()}
+                mutual_ids = [id for id in time_ids[1] if (id in time_ids[4]) and (id in time_ids[5])]
+                print(f"Mutual IDs: {len(mutual_ids)}")
+                take_images = {k: [path for path in take_images[k] if str(path).split('/')[-1].split('_')[1].split('.')[0] in mutual_ids] for k in take_images.keys()}
+                take_seg_masks = {k: [path for path in take_seg_masks[k] if str(path).split('/')[-1].split('_')[1].split('.')[0] in mutual_ids] for k in take_seg_masks.keys()}
 
             # Create video frames, for now we dont care about the views
             end_frame_idx = len(take_images[1]) if len(take_images[1]) != 0 else len(take_images[0])

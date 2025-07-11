@@ -29,6 +29,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         image_encoder,
         memory_attention=None,
         memory_encoder=None,
+        query_memory_fusion=None,
         multiview=False,
         epipolar_encoder=None,
         epipolar_attention=None,
@@ -73,7 +74,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         freeze_sam_mask_decoder=False,
         **kwargs,
     ):
-        super().__init__(image_encoder, memory_attention, memory_encoder, multiview, epipolar_attention, **kwargs)
+        super().__init__(image_encoder, memory_attention, memory_encoder, query_memory_fusion, multiview, epipolar_attention, **kwargs)
         self.use_act_ckpt_iterative_pt_sampling = use_act_ckpt_iterative_pt_sampling
         self.forward_backbone_per_frame_for_eval = forward_backbone_per_frame_for_eval
 

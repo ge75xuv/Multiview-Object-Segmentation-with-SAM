@@ -153,6 +153,13 @@ trainer:
             use_dwconv: True  # depth-wise convs
           num_layers: 2
 
+    query_memory_fusion:
+      _target_: custom_models.models.sam2former.query_memory_fusion.QueryMemoryFusion
+      num_queries: ${scratch.num_queries}
+      embed_dim: 64
+      hidden_dim: 128
+      fusion_type: early
+
     # Decoder
     mask_decoder_cfg:
       # _target_: custom_models.models.sam2former.mask_former_head.MaskFormerHead
@@ -453,7 +460,8 @@ trainer:
   # initialize from a SAM 2 checkpoint
   checkpoint:
     # NOTE: HEADS UP 
-    resume_from: sam2_logs/06_13_09_45/checkpoints/checkpoint_45.pt
+    # resume_from: sam2_logs/06_27_17_54/checkpoints/checkpoint_27.pt
+    # resume_from: sam2_logs/06_13_09_45/checkpoints/checkpoint_45.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
     save_freq: 1 # 0 only last checkpoint is saved.
     model_weight_initializer:
@@ -464,8 +472,8 @@ trainer:
       ignore_missing_keys: null
       state_dict:
         _target_: training.utils.checkpoint_utils.load_checkpoint_and_apply_kernels
-        checkpoint_path: /home/guests/tuna_gurbuz/prototype/models/sam2/checkpoints/sam2.1_hiera_base_plus.pt # PATH to SAM 2.1 checkpoint
-        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/06_13_09_45/checkpoints/checkpoint_45.pt
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/models/sam2/checkpoints/sam2.1_hiera_base_plus.pt # PATH to SAM 2.1 checkpoint
+        checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/06_13_09_45/checkpoints/checkpoint_45.pt
         ckpt_state_dict_keys: ['model']
 
 launcher:
