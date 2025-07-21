@@ -79,7 +79,8 @@ def load_state_dict_into_model(
     unexpected_keys = [k for k in unexpected_keys 
                        if not (k.startswith("sam_mask_decoder") or
                                k.startswith("sam_prompt_encoder") or
-                               k.startswith("memory"))
+                               k.startswith("memory") or
+                               k.startswith("multi_object_memory"))  # Memory part projection is changed
                        ]
 
     # Check if the epipolar encoder state dict exists, if not load the memory encoder state dict

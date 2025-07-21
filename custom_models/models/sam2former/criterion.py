@@ -39,7 +39,15 @@ def sigmoid_focal_loss(inputs, targets, num_masks:float, alpha: float=0.25, gamm
     p_t = prob * targets + (1 - prob) * (1 - targets)
     loss = ce_loss * ((1 - p_t) ** gamma)
 
-    if alpha >= 0:
+    if isinstance(alpha, torch.Tensor):
+        alpha = alpha[:-1]  # Remove the last element which is for the background class
+        # If alpha is a tensor, it should have the same shape as inputs
+        rep_num = targets.shape[0] // alpha.shape[0]
+        alpha = alpha.repeat(rep_num).unsqueeze(1)
+        alpha_t = alpha * targets + (1 - alpha) * (1 - targets)
+        loss = alpha_t * loss
+
+    elif alpha >= 0:
         alpha_t = alpha * targets + (1 - alpha) * (1 - targets)
         loss = alpha_t * loss
 
@@ -126,7 +134,8 @@ class SetCriterion(nn.Module):
     """
 
     def __init__(self, num_classes, matcher, weight_dict, eos_coef, losses,
-                 num_points, oversample_ratio, importance_sample_ratio, loss_weighting='default', deep_supervision=True, pointwise_mask=True):
+                 num_points, oversample_ratio, importance_sample_ratio, image_size=512,
+                 loss_weighting='default', deep_supervision=True, pointwise_mask=True):
         """Create the criterion.
         Parameters:
             num_classes: number of object categories, omitting the special no-object category
@@ -190,8 +199,8 @@ class SetCriterion(nn.Module):
         self.deep_supervision = deep_supervision
         self.pointwise_mask = pointwise_mask
         if not pointwise_mask:
-            self.resize_target_ = Resize((64, 64))  #TODO: HARDCODED PUT IT TO THE CONFIG
-            # self.resize_target_ = Resize((128, 128))
+            downsize = (128, 128) if image_size == 512 else (64, 64)
+            self.resize_target_ = Resize(downsize)
 
     def loss_labels(self, outputs, targets, indices, num_masks):
         """Classification loss (NLL)
@@ -214,11 +223,11 @@ class SetCriterion(nn.Module):
         """Compute the losses related to the masks: the focal loss and the dice loss.
         targets dicts must contain the key "masks" containing a tensor of dim [nb_target_boxes, h, w]
         """
-        assert "pred_masks" in outputs
+        assert "pred_masks_high_res" in outputs
 
         src_idx = self._get_src_permutation_idx(indices)
         tgt_idx = self._get_tgt_permutation_idx(indices)
-        src_masks = outputs["pred_masks"]
+        src_masks = outputs["pred_masks_high_res"]
         src_masks = src_masks[src_idx]
         masks = [t["masks"] for t in targets]
         # TODO use valid to mask invalid areas due to padding in loss
@@ -232,16 +241,15 @@ class SetCriterion(nn.Module):
         target_masks = target_masks[:, None]
 
         if not self.pointwise_mask:
-            target_masks_down = self.resize_target_(target_masks).flatten(1)
+            # target_masks_down = self.resize_target_(target_masks).flatten(1)
             src_masks = src_masks.flatten(1)
             losses = {
             # "loss_mask": sigmoid_ce_loss_jit(src_masks, target_masks_down, num_masks),
-            "loss_mask": sigmoid_focal_loss_jit(src_masks, target_masks_down, num_masks),
-            "loss_dice": dice_loss_jit(src_masks, target_masks_down, num_masks),
+            "loss_mask": sigmoid_focal_loss_jit(src_masks, target_masks, num_masks, self.empty_weight),
+            "loss_dice": dice_loss_jit(src_masks, target_masks, num_masks),
         }
             del src_masks
             del target_masks
-            del target_masks_down
             return losses
 
         with torch.no_grad():

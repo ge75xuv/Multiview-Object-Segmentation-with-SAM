@@ -23,6 +23,7 @@ class MiniDataset(Dataset):
                  object_labels: List[int],
                  transforms,
                  collate_fn,
+                 label_projection_type:str='default',
                  multiview:bool=False,
                  batch_size:int=1,
                  num_workers:int=0,
@@ -47,6 +48,9 @@ class MiniDataset(Dataset):
         self.object_labels = list(set(object_labels))  # Get rid of the repeating values if they exist
         true_labels = [obj['label'] for obj in iter(TRACK_TO_METAINFO.values())]
         assert all([obj in true_labels for obj in object_labels]), 'Unidentified key in the obj labels'
+
+        # Label projection map
+        self.label_projection_map = LABEL_PROJECTION_MAP[label_projection_type]
 
         # Initialize image resizer
         original_image_size = (1536, 2048)  # (H,W)  # TODO the images are not always the same, azure and simstation have different sizes
@@ -301,7 +305,7 @@ class MiniDataset(Dataset):
 
                 # Occupy obj_list with the objects in the scene.
                 # Temporary solution, 
-                pseudo_label = LABEL_PROJECTION_MAP[int(label)]['label']
+                pseudo_label = self.label_projection_map[int(label)]['label']
                 obj_list.append(Object(pseudo_label, frame_idx, mask1))
 
             # Occupy the frames

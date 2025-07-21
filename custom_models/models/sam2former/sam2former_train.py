@@ -306,7 +306,7 @@ class SAM2FormerTrain(SAM2FormerBase):
                 pred2 = output_dict[2]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[2]["non_cond_frame_outputs"][stage_id]
                 t = time.time()
                 epipolar_masks, object_pos_label = epipolar_main(camera_int_ext, pred0, pred1, pred2)
-                print(f"Epipolar lines computed in {time.time() - t} seconds")  #TODO: make it faster
+                print(f"Epipolar lines computed in {time.time() - t} seconds")
                 epipolar_masks = epipolar_masks.to(self.device)
                 # Scale the epipolar masks and add bias (Use the same scale and bias as in the memory encoder)
                 epipolar_masks = epipolar_masks.sigmoid() * self.sigmoid_scale_for_mem_enc + self.sigmoid_bias_for_mem_enc

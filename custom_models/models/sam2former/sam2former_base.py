@@ -700,8 +700,8 @@ class SAM2FormerBase(torch.nn.Module):
         if False: 
             memory = self.multi_object_memory_proj(memory.mT).mT
         else:
-            memory = self.multi_object_memory_proj(memory.T).T
-        memory_pos_embed = memory_pos_embed[:, 0:1]  # TODO Position embeddings are the same so you can just use the first one
+            memory = self.multi_object_memory_proj(memory.transpose(0,1)).transpose(0,1)
+        memory_pos_embed = memory_pos_embed[:, 0:1]
         # memory_pos_embed = self.multi_object_memory_pos_proj(memory_pos_embed.mT).mT
 
         pix_feat_with_mem = self.memory_attention(
