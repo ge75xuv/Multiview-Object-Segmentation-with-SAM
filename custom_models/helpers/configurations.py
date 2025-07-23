@@ -176,29 +176,29 @@ TRACK_TO_METAINFO = {
 LABEL_PROJECTION_MAP = {
     # TRUE PROJECTION
     'default': {
-        1: {'color': (255, 51, 153), 'label': 0},
-        2: {'color': (0, 0, 255), 'label': 1},
-        3: {'color': (255, 255, 0), 'label': 2},
-        4: {'color': (133, 0, 133), 'label': 3},
-        5: {'color': (255, 0, 0), 'label': 4},
-        6: {'color': (183, 91, 255), 'label': 5},
-        7: {'color': (177, 255, 110), 'label': 6},
-        8: {'color': (255, 128, 0), 'label': 7},
-        9: {'color': (116, 166, 116), 'label': 8},
-        10: {'color': (76, 161, 245), 'label': 9},
-        11: {'color': (125, 100, 25), 'label': 10},
-        12: {'color': (128, 255, 0), 'label': 11},
-        13: {'color': (0, 255, 128), 'label': 12},
-        15: {'color': (204, 0, 0), 'label': 13},
-        16: {'color': (0, 255, 234), 'label': 14},
-        17: {'color': (255, 128, 128), 'label': 15},
-        18: {'color': (60, 75, 255), 'label': 16},
-        24: {'color': (255, 255, 128), 'label': 17},
-        25: {'color': (0, 204, 128), 'label': 18},
-        26: {'color': (255, 255, 255), 'label': 19},
-        27: {'color': (162, 232, 108), 'label': 20},
-        28: {'color': (153, 0, 153), 'label': 21},
-        29: {'color': (153, 76, 0), 'label': 22},
+        1: {'color': (255, 51, 153), 'label': 0},     # 'instrument_table'
+        2: {'color': (0, 0, 255), 'label': 1},        # 'ae'
+        3: {'color': (255, 255, 0), 'label': 2},      # 'ot'
+        4: {'color': (133, 0, 133), 'label': 3},      # 'mps_station'
+        5: {'color': (255, 0, 0), 'label': 4},        # 'patient'
+        6: {'color': (183, 91, 255), 'label': 5},     # 'drape'
+        7: {'color': (177, 255, 110), 'label': 6},    # 'anest'
+        8: {'color': (255, 128, 0), 'label': 7},      # 'circulator'
+        9: {'color': (116, 166, 116), 'label': 8},    # 'assistant_surgeon'
+        10: {'color': (76, 161, 245), 'label': 9},    # 'head_surgeon'
+        11: {'color': (125, 100, 25), 'label': 10},   # 'mps'
+        12: {'color': (128, 255, 0), 'label': 11},    # 'nurse'
+        13: {'color': (0, 255, 128), 'label': 12},    # 'drill'
+        15: {'color': (204, 0, 0), 'label': 13},      # 'hammer'
+        16: {'color': (0, 255, 234), 'label': 14},    # 'saw'
+        17: {'color': (255, 128, 128), 'label': 15},  # 'tracker'
+        18: {'color': (60, 75, 255), 'label': 16},    # 'mako_robot'
+        24: {'color': (255, 255, 128), 'label': 17},  # 'monitor'
+        25: {'color': (0, 204, 128), 'label': 18},    # 'c_arm'
+        26: {'color': (255, 255, 255), 'label': 19},  # 'unrelated_person'
+        27: {'color': (162, 232, 108), 'label': 20},  # 'student'
+        28: {'color': (153, 0, 153), 'label': 21},    # 'secondary_table'
+        29: {'color': (153, 76, 0), 'label': 22},     # 'cementer'
     },
 
     # PROJECTION WITH HUMAN LABEL

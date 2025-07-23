@@ -276,6 +276,7 @@ class SAM2FormerTrain(SAM2FormerBase):
                 current_out = self.track_step(
                     frame_idx=stage_id,
                     is_init_cond_frame=stage_id in init_cond_frames,
+                    is_refinement=False,
                     current_vision_feats=current_vision_feats,
                     current_vision_pos_embeds=current_vision_pos_embeds,
                     feat_sizes=feat_sizes,
@@ -298,15 +299,16 @@ class SAM2FormerTrain(SAM2FormerBase):
                     last_vision_feat = current_vision_feats[-1].detach().clone()  #NOTE NOT SURE IF DETACH
                     feature_container_for_multiview_fusion[view_idx] = last_vision_feat.permute(1, 2, 0).view(B, D, H, W)
             # end view loop
-            # print(f"Processed stage {stage_id} in {time.time() - t_stage:.2f} seconds")
             # Fuse the epipolar lines
             if self.multiview:
                 pred0 = output_dict[0]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[0]["non_cond_frame_outputs"][stage_id]
                 pred1 = output_dict[1]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[1]["non_cond_frame_outputs"][stage_id]
                 pred2 = output_dict[2]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[2]["non_cond_frame_outputs"][stage_id]
-                t = time.time()
-                epipolar_masks, object_pos_label = epipolar_main(camera_int_ext, pred0, pred1, pred2)
-                print(f"Epipolar lines computed in {time.time() - t} seconds")
+                epipolar_masks, object_pos_label = epipolar_main(camera_int_ext, 
+                                                                 pred0,
+                                                                 pred1,
+                                                                 pred2,
+                                                                 self.sam_mask_decoder.predictor.num_queries)
                 epipolar_masks = epipolar_masks.to(self.device)
                 # Scale the epipolar masks and add bias (Use the same scale and bias as in the memory encoder)
                 epipolar_masks = epipolar_masks.sigmoid() * self.sigmoid_scale_for_mem_enc + self.sigmoid_bias_for_mem_enc
@@ -319,6 +321,27 @@ class SAM2FormerTrain(SAM2FormerBase):
                     # dictionary with keys "vision_features" and "vision_pos_enc"
                     encoded_epipolars['object_positions_labels'] = object_pos_label[view_idx]
                     encoded_epipolar_dict[view_idx] = encoded_epipolars
+
+                # Run the refinement
+                current_out = self.track_step(
+                    frame_idx=stage_id,
+                    is_init_cond_frame=stage_id in init_cond_frames,
+                    is_refinement=True,
+                    current_vision_feats=current_vision_feats,
+                    current_vision_pos_embeds=current_vision_pos_embeds,
+                    feat_sizes=feat_sizes,
+                    output_dict=output_dict[view_idx],
+                    encoded_epipolar_dict = encoded_epipolar_dict[view_idx] if self.multiview else None,
+                    num_frames=num_frames,
+                    run_mem_encoder=True if num_frames > 1 else False,
+                )
+
+                # Add the output to the output_dict
+                add_output_as_cond_frame = stage_id in init_cond_frames
+                if add_output_as_cond_frame:
+                    output_dict[view_idx]["cond_frame_outputs"][stage_id] = current_out
+                else:
+                    output_dict[view_idx]["non_cond_frame_outputs"][stage_id] = current_out
 
         # end stage loop
 
@@ -353,6 +376,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         self,
         frame_idx,
         is_init_cond_frame,
+        is_refinement,
         current_vision_feats,
         current_vision_pos_embeds,
         feat_sizes,
@@ -372,6 +396,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         current_out, sam_outputs, high_res_features, pix_feat = self._track_step(
             frame_idx,
             is_init_cond_frame,
+            is_refinement,
             current_vision_feats,
             current_vision_pos_embeds,
             feat_sizes,

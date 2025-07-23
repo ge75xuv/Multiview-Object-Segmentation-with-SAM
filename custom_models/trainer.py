@@ -473,10 +473,10 @@ class Trainer:
             key = batch.dict_key  # key for dataset
 
             # Reshape the target for the loss
-            frame_idx = [idx for idx in range(batch_size)]  # Batch size is technically num frames
+            frame_idx = [idx for idx in range(batch_size)]  # Batch size can be num frames
             batch_idx = batch.metadata.unique_objects_identifier[:,:,0].unique()
-            iter_indeces = frame_idx if frame_idx != [0] else batch_idx
-            iter_dim = 2 if frame_idx != [0] else 0
+            iter_indeces = frame_idx if frame_idx != [0] else batch_idx  # Either iterate over frames or batch indices
+            iter_dim = 2 if frame_idx != [0] else 0  # Either iterate over frames or batch dimension index
             for i in iter_indeces:
                 # dim=2 video_id, obj_id, frame_id
                 xx, yy = torch.where(batch.metadata.unique_objects_identifier[:,:,iter_dim] == i)
@@ -512,6 +512,23 @@ class Trainer:
         # Calculate the loss
         loss = self.loss[key](outputs, targets)
         loss_str = f"Losses/{phase}_{key}_loss"
+
+        # DEBUGGING
+        # test_image = [batch[i].img_batch.squeeze(1).permute(0, 2, 3, 1).detach().cpu().float().numpy().tolist() for i in range(3)]
+        # test_image = batch.img_batch
+        # test_image = test_image.squeeze(1).permute(0, 2, 3, 1).detach().cpu().float().numpy().tolist()
+        # test_outputs = {i: {} for i in range(len(outputs))}
+        # test_targets = [{} for i in range(len(targets))]
+        # for frame_idx in outputs:
+        #     for pred_keys in outputs[frame_idx]:
+        #         if pred_keys == 'aux_outputs':
+        #             continue
+        #         test_outputs[frame_idx][pred_keys] = outputs[frame_idx][pred_keys].detach().cpu().float().tolist()
+        # for frame_idx in range(len(outputs)):
+        #     for pred_keys in targets[frame_idx]:
+        #         test_targets[frame_idx][pred_keys] = targets[frame_idx][pred_keys].detach().cpu().float().tolist()
+        # with open('./temp/test_video_order.json', 'w') as f:
+        #     json.dump(test_outputs, f)
 
         loss_log_str = os.path.join("Step_Losses", loss_str)
 

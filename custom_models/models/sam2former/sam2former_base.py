@@ -193,8 +193,8 @@ class SAM2FormerBase(torch.nn.Module):
 
         # HEADS UP
         # Memory projection for multiobject
+        num_queries = self.sam_mask_decoder.predictor.num_queries
         if query_memory_fusion is None:
-            num_queries = self.sam_mask_decoder.predictor.num_queries
             self.multi_object_memory_proj = torch.nn.Linear(num_queries,1)
             self.multi_object_memory_pos_proj = torch.nn.Linear(num_queries,1)
         else:
@@ -464,6 +464,7 @@ class SAM2FormerBase(torch.nn.Module):
         self,
         frame_idx,
         is_init_cond_frame,
+        is_refinement,
         current_vision_feats,
         current_vision_pos_embeds,
         feat_sizes,
@@ -476,15 +477,19 @@ class SAM2FormerBase(torch.nn.Module):
         C = self.hidden_dim
         H, W = feat_sizes[-1]  # top-level (lowest-resolution) feature size
         device = current_vision_feats[-1].device
-        if is_init_cond_frame:
+        if is_init_cond_frame and not is_refinement:
             assert len(encoded_epipolar_dict) == 0, "No epipolar features should be provided for the initial conditioning frame."
             # directly add no-epi embedding (instead of using the transformer encoder)
             pix_feat_with_epi_embed = current_vision_feats + self.no_epipolar_embed
             pix_feat_with_epi_embed = pix_feat_with_epi_embed.permute(1, 2, 0).view(B, C, H, W)
             return pix_feat_with_epi_embed
 
+        if is_init_cond_frame and is_refinement:
+            # If this is a refinement frame, we should not directly add the no-epi embedding
+            # but use the epipolar attention to condition the current frame's features.
+            assert len(encoded_epipolar_dict) > 0, "Epipolar features should be provided for the refinement frame."
+
         # Step 0: Get the epipolar features
-        #TODO CHECK SHAPES AND WHY POS ENC IS A LIST
         epi_feats = encoded_epipolar_dict["epi_vision_features"].to(device, non_blocking=True)
         epi_feats = epi_feats.flatten(2).permute(2, 0, 1)
         epi_pos_enc = encoded_epipolar_dict["epi_vision_pos_enc"].to(device)
@@ -771,6 +776,7 @@ class SAM2FormerBase(torch.nn.Module):
         self,
         frame_idx,
         is_init_cond_frame,
+        is_refinement,
         current_vision_feats,
         current_vision_pos_embeds,
         feat_sizes,
@@ -823,6 +829,7 @@ class SAM2FormerBase(torch.nn.Module):
             pix_feat = self._prepare_epipolar_conditioned_features(
                 frame_idx=frame_idx,
                 is_init_cond_frame=is_init_cond_frame,
+                is_refinement=is_refinement,
                 current_vision_feats=pix_feat,  # NOTE use the output of memory attention
                 current_vision_pos_embeds=current_vision_pos_embeds[-1:],
                 feat_sizes=feat_sizes[-1:],

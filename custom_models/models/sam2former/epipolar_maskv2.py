@@ -194,6 +194,7 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
                   predictions0: Dict[str, torch.Tensor],
                   predictions1: Dict[str, torch.Tensor],
                   predictions2: Dict[str, torch.Tensor],
+                  num_queries: int = 23,
                   epipolar_weight: float = 0.5,
                   n_points: Optional[int] = 4096,
                   step: Optional[int] = 2,
@@ -208,14 +209,15 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
     # Initialize the masks
     device = pred_class0.device
     o, h, w = predictions0['pred_masks_high_res'].shape[-3:]
-    unique_projected_labels = set([obj['label'] for obj in LABEL_PROJECTION_MAP.values()])
+    unique_projected_labels = set([obj['label'] for obj in LABEL_PROJECTION_MAP['default'].values()])
+    # unique_projected_labels = [i for i in range(num_queries)]  # TODO: get it from the config num_classes
     masks = torch.zeros([len(unique_projected_labels), 3, h, w], dtype=torch.float32, device=device)
 
     # Object position dictionary
     object_pos_label = {view_idx:{pos_idx:None for pos_idx in range(o)} for view_idx in range(3)}
 
     # Iterate over the objects of interest and get the masks.
-    for obj_idx in LABEL_PROJECTION_MAP.values():  #TODO get it from the config num_classes
+    for obj_idx in LABEL_PROJECTION_MAP['default'].values():  #TODO get it from the config num_classes
         # Get the object index from the label projection map
         obj_idx = obj_idx['label']
 

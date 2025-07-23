@@ -18,7 +18,7 @@ from custom_models.helpers.configurations import OBJECT_FREQUENCY_PATH
 from .utils.misc import is_dist_avail_and_initialized, nested_tensor_from_tensor_list
 
 
-def sigmoid_focal_loss(inputs, targets, num_masks:float, alpha: float=0.25, gamma: float=2):
+def sigmoid_focal_loss(inputs, targets, num_masks:float, alpha: torch.Tensor=torch.Tensor([0.25]), gamma: float=2):
     """
     Loss used in RetinaNet for dense detection: https://arxiv.org/abs/1708.02002.
     Args:
@@ -242,6 +242,7 @@ class SetCriterion(nn.Module):
 
         if not self.pointwise_mask:
             # target_masks_down = self.resize_target_(target_masks).flatten(1)
+            target_masks = target_masks.flatten(1)
             src_masks = src_masks.flatten(1)
             losses = {
             # "loss_mask": sigmoid_ce_loss_jit(src_masks, target_masks_down, num_masks),

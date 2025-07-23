@@ -2,13 +2,13 @@
 
 scratch:
   resolution: 512
-  train_batch_size: 2
+  train_batch_size: 1
   num_train_workers: 1
   base_lr: 2.0e-5  # 5.0e-6
   vision_lr: 1.0e-5  # 3.0e-06
   obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29]
   num_frames: 1
-  multiview: False
+  multiview: true
   max_epochs: 75
   # Decoder
   num_queries: 23
@@ -154,12 +154,12 @@ trainer:
             use_dwconv: True  # depth-wise convs
           num_layers: 2
 
-    # query_memory_fusion:
-    #   _target_: custom_models.models.sam2former.query_memory_fusion.QueryMemoryFusion
-    #   num_queries: ${scratch.num_queries}
-    #   embed_dim: 64
-    #   hidden_dim: 128
-    #   fusion_type: early
+    query_memory_fusion:
+      _target_: custom_models.models.sam2former.query_memory_fusion.QueryMemoryFusion
+      num_queries: ${scratch.num_queries}
+      embed_dim: 64
+      hidden_dim: 128
+      fusion_type: early
 
     # Decoder
     mask_decoder_cfg:
@@ -468,7 +468,7 @@ trainer:
     # resume_from: sam2_logs/06_27_17_54/checkpoints/checkpoint_27.pt
     # resume_from: sam2_logs/06_13_09_45/checkpoints/checkpoint_45.pt
     # resume_from: sam2_logs/07_12_10_18/checkpoints/checkpoint_51.pt
-    resume_from: sam2_logs/07_17_21_33/checkpoints/checkpoint_65.pt
+    # resume_from: sam2_logs/07_17_21_33/checkpoints/checkpoint_65.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
     save_freq: 1 # 0 only last checkpoint is saved.
     model_weight_initializer:
@@ -486,7 +486,7 @@ trainer:
 
 launcher:
   num_nodes: 1
-  gpus_per_node: 2
+  gpus_per_node: 1
   experiment_log_dir: null # Path to log directory, defaults to ./sam2_logs/${config_name}
 
 # SLURM args if running on a cluster
