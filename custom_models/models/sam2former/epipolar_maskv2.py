@@ -2,9 +2,13 @@
 import time
 from typing import List, Tuple, Optional, Dict
 
+import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # noqa: E402
+
 import torch
 
-from custom_models.helpers.configurations import OBJECTS_EPIPOLAR, LABEL_PROJECTION_MAP
+from helpers.configurations import OBJECTS_EPIPOLAR, LABEL_PROJECTION_MAP
 
 VIEW_COMBINATIONS = {
     0: ["epi_lines_1_to_0", "epi_lines_2_to_0"],
@@ -42,6 +46,35 @@ def intersection(a, b, c, k, l, m):
     x = torch.round((-c * l + m * b) / (a * l - k * b)).type(torch.int32)
     y = torch.round((-c - a * x) / b).type(torch.int32)
     return torch.concatenate((x, y), axis=1)
+
+def intersection_vectorized(a, b, c, k, l, m):
+    # Compute all intersections at once using broadcasting
+    # This creates [N, M] matrices for x and y coordinates
+    denom = a * l - k * b  # [N, M]
+
+    # Avoid division by zero (parallel lines)
+    mask = denom != 0
+    denom_safe = torch.where(mask, denom, torch.ones_like(denom))
+
+    # Calculate intersection points
+    x = (-c * l + m * b) / denom_safe  # [N, M]
+    y = (-c - a * x) / b  # [N, M]
+
+    # Round and convert to int
+    x = torch.round(x).to(torch.int32)
+    y = torch.round(y).to(torch.int32)
+
+    # Mask out invalid intersections (parallel lines)
+    x = torch.where(mask, x, torch.full_like(x, fill_value=-1))
+    y = torch.where(mask, y, torch.full_like(y, fill_value=-1))
+
+    # Flatten and stack to get all intersection points
+    intersect_point = torch.stack([x.flatten(), y.flatten()], dim=1)  # [N*M, 2]
+
+    # Remove invalid points (where lines were parallel)
+    valid_mask = (intersect_point[:, 0] != -1) & (intersect_point[:, 1] != -1)
+    intersect_point = intersect_point[valid_mask]
+    return intersect_point
 
 def single_epiline(_size: Tuple[int, int], lines: torch.Tensor, step: int = 10):
     h, w = _size
@@ -177,14 +210,44 @@ def epipolar_mask(
 
         # If both lines exist, compute the intersection
         elif _check_first == True and _check_second == True:
-            intersect_point1 = single_epiline(_size, _first_epi_lines, step)
-            intersect_point2 = single_epiline(_size, _second_epi_lines, step)
-            epi_masks_for_views[view] = intersect_point1, intersect_point2
+            # intersect_point1 = single_epiline(_size, _first_epi_lines, step)
+            # intersect_point2 = single_epiline(_size, _second_epi_lines, step)
+            # epi_masks_for_views[view] = intersect_point1, intersect_point2
+
+            # Vectorized intersection computation
+            start_time = time.time()
+            skip = 1
+            a, b, c = _first_epi_lines.T[:, ::skip]  # Shape: [N]
+            k, l, m = _second_epi_lines.T[:, ::skip]  # Shape: [M]
+
+            # Expand dimensions for broadcasting: a,b,c -> [N,1], k,l,m -> [1,M]
+            a = a[:, None]  # [N, 1]
+            b = b[:, None]  # [N, 1] 
+            c = c[:, None]  # [N, 1]
+            k = k[None, :]  # [1, M]
+            l = l[None, :]  # [1, M]
+            m = m[None, :]  # [1, M]
+
+            # Calculate the intersection point, every line to all lines
+            intersect_point = intersection_vectorized(a, b, c, k, l, m)
+            print(f"Time taken for the intersection_vectorized for view {view}: {time.time() - start_time:.4f} seconds")
+            # start_time = time.time()
+            # # Remove duplicates
+            # intersect_point = torch.unique(intersect_point, dim=0)
+            # print(f"Time taken for the torch.unique for view {view}: {time.time() - start_time:.4f} seconds")
+            start_time = time.time()
+            # Remove points outside the image bounds
+            intersect_point = intersect_point[(intersect_point[:, 0] >= 0) & (intersect_point[:, 0] < _size[1]) &
+                                              (intersect_point[:, 1] >= 0) & (intersect_point[:, 1] < _size[0])]
+            print(f"Time taken for masking for view {view}: {time.time() - start_time:.4f} seconds")
+            # Add the intersection points to the view
+            epi_masks_for_views[view] = intersect_point, torch.tensor([[]])  # No second intersection points needed (Put a scalar)
 
         # If only one line exists, sample along the epipolar line
         else:
             intersect_point = single_epiline(_size, 
-                           _first_epi_lines if _first_epi_lines is not None else _second_epi_lines
+                           _first_epi_lines if _first_epi_lines is not None else _second_epi_lines,
+                           step=1
                         )
             epi_masks_for_views[view] = intersect_point, torch.tensor([[]])
     return epi_masks_for_views
@@ -300,20 +363,27 @@ if __name__ == '__main__':
         mask_cam2 = torch.Tensor(predictions['pred_masks_high_res'][2])[tuple(cam2_ids), :, :]
 
         # NOTE: test lacking visibility
-        mask_cam0 = torch.zeros_like(mask_cam0)
+        # mask_cam0 = torch.zeros_like(mask_cam0)
         
-        start_time = time.time()
+        start_time_all = time.time()
 
         # Preprocess the masks to get points
-        pts_cam0, pts_cam1, pts_cam2 = epipolar_mask_preprocess(mask_cam0, mask_cam1, mask_cam2, num_points_idx=-1)
+        pts_cam0, pts_cam1, pts_cam2 = epipolar_mask_preprocess(mask_cam0, mask_cam1, mask_cam2)
+        
+        print(f"Time taken for preprocessing for object {obj_idx}: {time.time() - start_time_all:.4f} seconds")
+        start_time_temp = time.time()
 
         # Run the epipolar mask function
         epi_mask_for_views = epipolar_mask(camera_int_ext, pts_cam0, pts_cam1, pts_cam2, mask_cam0.shape[-2:])
+        
+        print(f"Time taken for epipolar mask computation for object {obj_idx}: {time.time() - start_time_temp:.4f} seconds")
+        start_time_temp = time.time()
 
         # Epipolar mask post processing
         masks = epipolar_mask_post_process(epi_mask_for_views, mask_cam0.shape[-2:])
+        print(f"Time taken for post processing for object {obj_idx}: {time.time() - start_time_temp:.4f} seconds")
         
-        print(f"Time taken for epipolar mask computation for object {obj_idx}: {time.time() - start_time:.4f} seconds")
+        print(f"Time taken for all computation for object {obj_idx}: {time.time() - start_time_all:.4f} seconds")
 
 # TODO: Add the visualization of the epipolar lines and intersection points
 # NOTE: Visualization is added by ipynb debug

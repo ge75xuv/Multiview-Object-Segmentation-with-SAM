@@ -6,7 +6,7 @@ from typing import List
 import numpy as np
 from PIL import Image
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, DistributedSampler
 from torchvision.transforms import ToTensor, Resize
 from training.utils.data_utils import Object, Frame, VideoDatapoint
 from tqdm import tqdm
@@ -322,7 +322,22 @@ class MiniDataset(Dataset):
         return out_image
 
     def get_loader(self, **kwargs):
-        return DataLoader(self, batch_size=self.batch_size, shuffle=self.shuffle, collate_fn=self.collate_fn, num_workers=self.num_workers)
+        # Check if we're in distributed training
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            sampler = DistributedSampler(self, shuffle=self.shuffle)
+            shuffle = False  # Don't shuffle in DataLoader when using sampler
+        else:
+            sampler = None
+            shuffle = self.shuffle  # Use shuffle directly in DataLoader
+
+        return DataLoader(
+            self, 
+            batch_size=self.batch_size, 
+            sampler=sampler, 
+            shuffle=shuffle,
+            collate_fn=self.collate_fn, 
+            num_workers=self.num_workers
+        )
 
     def load_checkpoint_state(*args, **kwargs):
         pass

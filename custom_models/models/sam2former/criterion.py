@@ -18,7 +18,7 @@ from custom_models.helpers.configurations import OBJECT_FREQUENCY_PATH
 from .utils.misc import is_dist_avail_and_initialized, nested_tensor_from_tensor_list
 
 
-def sigmoid_focal_loss(inputs, targets, num_masks:float, alpha: torch.Tensor=torch.Tensor([0.25]), gamma: float=2):
+def sigmoid_focal_loss(inputs, targets, num_masks:float, alpha: torch.Tensor=torch.Tensor([0.25]), gamma: float=2, red_sum: bool=True):
     """
     Loss used in RetinaNet for dense detection: https://arxiv.org/abs/1708.02002.
     Args:
@@ -39,19 +39,13 @@ def sigmoid_focal_loss(inputs, targets, num_masks:float, alpha: torch.Tensor=tor
     p_t = prob * targets + (1 - prob) * (1 - targets)
     loss = ce_loss * ((1 - p_t) ** gamma)
 
-    if isinstance(alpha, torch.Tensor):
-        alpha = alpha[:-1]  # Remove the last element which is for the background class
-        # If alpha is a tensor, it should have the same shape as inputs
-        rep_num = targets.shape[0] // alpha.shape[0]
-        alpha = alpha.repeat(rep_num).unsqueeze(1)
+    if alpha >= 0:
         alpha_t = alpha * targets + (1 - alpha) * (1 - targets)
         loss = alpha_t * loss
 
-    elif alpha >= 0:
-        alpha_t = alpha * targets + (1 - alpha) * (1 - targets)
-        loss = alpha_t * loss
-
-    return loss.mean(1).sum() / num_masks
+    if red_sum:
+        return loss.mean(1).sum() / num_masks
+    return loss.mean(1)
 
 sigmoid_focal_loss_jit = torch.jit.script(
     sigmoid_focal_loss
@@ -246,7 +240,7 @@ class SetCriterion(nn.Module):
             src_masks = src_masks.flatten(1)
             losses = {
             # "loss_mask": sigmoid_ce_loss_jit(src_masks, target_masks_down, num_masks),
-            "loss_mask": sigmoid_focal_loss_jit(src_masks, target_masks, num_masks, self.empty_weight),
+            "loss_mask": sigmoid_focal_loss_jit(src_masks, target_masks, num_masks, alpha=0.75),
             "loss_dice": dice_loss_jit(src_masks, target_masks, num_masks),
         }
             del src_masks
