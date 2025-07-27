@@ -13,12 +13,12 @@ import torch.nn.functional as F
 from torch import nn
 from torchvision.transforms import Resize
 
-from .lib import get_world_size, point_sample, get_uncertain_point_coords_with_randomness
+from .lib import get_world_size, point_sample, get_uncertain_point_coords_with_randomness, sample_from_obj_id
 from custom_models.helpers.configurations import OBJECT_FREQUENCY_PATH
 from .utils.misc import is_dist_avail_and_initialized, nested_tensor_from_tensor_list
 
 
-def sigmoid_focal_loss(inputs, targets, num_masks:float, alpha: torch.Tensor=torch.Tensor([0.25]), gamma: float=2, red_sum: bool=True):
+def sigmoid_focal_loss(inputs, targets, num_masks:float, alpha: float=0.25, gamma: float=2, alpha_vec: torch.Tensor=None, red_sum: bool=True):
     """
     Loss used in RetinaNet for dense detection: https://arxiv.org/abs/1708.02002.
     Args:
@@ -39,7 +39,11 @@ def sigmoid_focal_loss(inputs, targets, num_masks:float, alpha: torch.Tensor=tor
     p_t = prob * targets + (1 - prob) * (1 - targets)
     loss = ce_loss * ((1 - p_t) ** gamma)
 
-    if alpha >= 0:
+    if alpha_vec is not None:
+        # alpha_vec is a vector of weights for each mask, used to weight the loss for each mask
+        alpha_t = alpha_vec * targets + (1 - alpha_vec) * (1 - targets)
+        loss = alpha_t * loss
+    elif alpha >= 0:
         alpha_t = alpha * targets + (1 - alpha) * (1 - targets)
         loss = alpha_t * loss
 
@@ -77,6 +81,33 @@ dice_loss_jit = torch.jit.script(
     dice_loss
 )  # type: torch.jit.ScriptModule
 
+def soft_coactivation_loss(class_logits, target_classes, similar_class_pairs, reduction='mean'):
+    """
+    Args:
+        class_logits: Tensor of shape (num_queries, num_classes)
+        target_classes: Tensor of shape (num_queries,) with GT class IDs
+        similar_class_pairs: List of tuples like [(10,11), (12,13)]
+    """
+    probs = class_logits.softmax(dim=-1)
+    loss = 0.0
+    count = 0
+
+    for c1, c2 in similar_class_pairs:
+        # Find queries assigned to either class
+        idx_c1 = torch.where(target_classes == c1)
+        idx_c2 = torch.where(target_classes == c2)
+
+        # Check the class prob of obj2 of the query that is suppossed to detect obj1
+        if idx_c1[0].numel() > 0:
+            loss += (probs[idx_c1[0], idx_c1[1], c2] ** 2).sum()
+            count += idx_c1[0].sum()
+        if idx_c2[0].numel() > 0:
+            loss += (probs[idx_c2[0], idx_c2[1], c1] ** 2).sum()
+            count += idx_c2[0].sum()
+
+    if reduction == 'mean' and count > 0:
+        loss = loss / count
+    return loss
 
 def sigmoid_ce_loss(
         inputs: torch.Tensor,
@@ -129,7 +160,7 @@ class SetCriterion(nn.Module):
 
     def __init__(self, num_classes, matcher, weight_dict, eos_coef, losses,
                  num_points, oversample_ratio, importance_sample_ratio, image_size=512,
-                 loss_weighting='default', deep_supervision=True, pointwise_mask=True):
+                 loss_weighting='default', weight_soft_co=0.1, deep_supervision=True, pointwise_mask=True):
         """Create the criterion.
         Parameters:
             num_classes: number of object categories, omitting the special no-object category
@@ -146,6 +177,7 @@ class SetCriterion(nn.Module):
         self.losses = losses
         empty_weight = torch.ones(self.num_classes + 1)
         empty_weight[-1] = self.eos_coef
+        self.weight_soft_co = weight_soft_co
 
         # Weights for object classes
         frequency_file_path = OBJECT_FREQUENCY_PATH
@@ -210,7 +242,8 @@ class SetCriterion(nn.Module):
         )
         target_classes[idx] = target_classes_o
         loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
-        losses = {"loss_class": loss_ce}
+        soft_co_loss = soft_coactivation_loss(src_logits, target_classes, [(8,9)], reduction='sum')
+        losses = {"loss_class": loss_ce + self.weight_soft_co * soft_co_loss}
         return losses
     
     def loss_masks(self, outputs, targets, indices, num_masks):
@@ -221,13 +254,19 @@ class SetCriterion(nn.Module):
 
         src_idx = self._get_src_permutation_idx(indices)
         tgt_idx = self._get_tgt_permutation_idx(indices)
-        src_masks = outputs["pred_masks_high_res"]
+        src_masks = outputs["pred_masks_high_res"] if not self.pointwise_mask else outputs["pred_masks"]
         src_masks = src_masks[src_idx]
         masks = [t["masks"] for t in targets]
         # TODO use valid to mask invalid areas due to padding in loss
         target_masks, valid = nested_tensor_from_tensor_list(masks).decompose()
         target_masks = target_masks.to(src_masks)
         target_masks = target_masks[tgt_idx]
+
+        # For class specific sampling
+        labels = [t["labels"] for t in targets]
+        target_labels = torch.stack(labels, dim=0)
+        target_labels = target_labels.to(src_masks.device)
+        target_labels = target_labels[tgt_idx]
 
         # No need to upsample predictions as we are using normalized coordinates :)
         # N x 1 x H x W
@@ -238,9 +277,11 @@ class SetCriterion(nn.Module):
             # target_masks_down = self.resize_target_(target_masks).flatten(1)
             target_masks = target_masks.flatten(1)
             src_masks = src_masks.flatten(1)
+            alpha = 0.25
+            # alpha_vec = self.empty_weight[tgt_idx[1]].to(src_masks.device)[:,None]
             losses = {
             # "loss_mask": sigmoid_ce_loss_jit(src_masks, target_masks_down, num_masks),
-            "loss_mask": sigmoid_focal_loss_jit(src_masks, target_masks, num_masks, alpha=0.75),
+            "loss_mask": sigmoid_focal_loss_jit(src_masks, target_masks, num_masks, alpha=alpha),
             "loss_dice": dice_loss_jit(src_masks, target_masks, num_masks),
         }
             del src_masks
@@ -256,6 +297,12 @@ class SetCriterion(nn.Module):
                 self.oversample_ratio,
                 self.importance_sample_ratio,
             )
+            # Sample specific classes for accuracy
+            obj_id = 2
+            num_points = 256
+            point_coords = sample_from_obj_id(target_labels, target_masks, obj_id, point_coords, num_points)
+            obj_id = 13
+            point_coords = sample_from_obj_id(target_labels, target_masks, obj_id, point_coords, num_points)
             # get gt labels
             point_labels = point_sample(
                 target_masks,

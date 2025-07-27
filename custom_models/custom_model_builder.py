@@ -115,6 +115,8 @@ def build_sam2former(
     training_key = list(cfg.keys())[0]
     # model = instantiate(cfg[training_key][''].trainer.model, _recursive_=True)
     model = instantiate(cfg[training_key].trainer.model, _recursive_=True)
+    mean = cfg[training_key].vos.train_transforms[0].transforms[0].mean
+    std  = cfg[training_key].vos.train_transforms[0].transforms[0].std
     # _load_checkpoint(model, ckpt_path)
     # _remove_parameters_of_backbone(model)
     # send model to device
@@ -126,7 +128,7 @@ def build_sam2former(
     # loss = instantiate(cfg[training_key][''].trainer.loss, _recursive_=True)
     loss = instantiate(cfg[training_key].trainer.loss, _recursive_=True)
     # return model, cfg[training_key]['']['scratch']['obj_labels'], optim, loss
-    return model, cfg[training_key]['scratch']['obj_labels'], optim, loss
+    return model, cfg[training_key]['scratch']['obj_labels'], optim, loss, mean, std
 
 def _load_checkpoint(model, ckpt_path, _load_partial:bool=False):
     if ckpt_path is not None:
