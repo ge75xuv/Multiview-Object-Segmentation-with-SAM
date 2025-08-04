@@ -11,8 +11,8 @@ import re
 from hydra import compose, initialize
 from hydra.utils import instantiate
 from hydra.core.global_hydra import GlobalHydra
-if not GlobalHydra.instance().is_initialized():
-    initialize(version_base=None, config_path="./configs", job_name="train_run")
+# if not GlobalHydra.instance().is_initialized():
+#     initialize(version_base=None, config_path="./configs", job_name="train_run")
 from omegaconf import OmegaConf
 import torch
 import torch.nn as nn
@@ -112,23 +112,26 @@ def build_sam2former(
     OmegaConf.resolve(cfg)
     print(f'OmegaConf resolved successfully')
     # Instantiate model, loss, load weights, freeze backbone
-    training_key = list(cfg.keys())[0]
-    # model = instantiate(cfg[training_key][''].trainer.model, _recursive_=True)
-    model = instantiate(cfg[training_key].trainer.model, _recursive_=True)
-    mean = cfg[training_key].vos.train_transforms[0].transforms[0].mean
-    std  = cfg[training_key].vos.train_transforms[0].transforms[0].std
-    # _load_checkpoint(model, ckpt_path)
-    # _remove_parameters_of_backbone(model)
-    # send model to device
+    if len(cfg.keys()) == 1:
+        training_key = list(cfg.keys())[0]
+        # model = instantiate(cfg[training_key][''].trainer.model, _recursive_=True)
+        model = instantiate(cfg[training_key].trainer.model, _recursive_=True)
+        mean = cfg[training_key].vos.train_transforms[0].transforms[0].mean
+        std  = cfg[training_key].vos.train_transforms[0].transforms[0].std
+        loss = instantiate(cfg[training_key].trainer.loss, _recursive_=True)
+        obj_labels = cfg[training_key]['scratch']['obj_labels']
+    else:
+        model = instantiate(cfg.trainer.model, _recursive_=True)
+        mean = cfg.vos.train_transforms[0].transforms[0].mean
+        std  = cfg.vos.train_transforms[0].transforms[0].std
+        loss = instantiate(cfg.trainer.loss, _recursive_=True)
+        obj_labels = cfg['scratch']['obj_labels']
     model = model.to(device)
     if mode == "eval":
         model.eval()
     optim = lambda:0
     optim.optimizer = torch.optim.AdamW(model.parameters())
-    # loss = instantiate(cfg[training_key][''].trainer.loss, _recursive_=True)
-    loss = instantiate(cfg[training_key].trainer.loss, _recursive_=True)
-    # return model, cfg[training_key]['']['scratch']['obj_labels'], optim, loss
-    return model, cfg[training_key]['scratch']['obj_labels'], optim, loss, mean, std
+    return model, obj_labels, optim, loss, mean, std
 
 def _load_checkpoint(model, ckpt_path, _load_partial:bool=False):
     if ckpt_path is not None:

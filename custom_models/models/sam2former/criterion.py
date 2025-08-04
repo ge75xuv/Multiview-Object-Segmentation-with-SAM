@@ -160,7 +160,7 @@ class SetCriterion(nn.Module):
 
     def __init__(self, num_classes, matcher, weight_dict, eos_coef, losses,
                  num_points, oversample_ratio, importance_sample_ratio, image_size=512,
-                 loss_weighting='default', weight_soft_co=0.1, deep_supervision=True, pointwise_mask=True):
+                 loss_weighting='default', weight_soft_co=0.1, deep_supervision=True, pointwise_mask=True, obj_ids_extra_sampling=None):
         """Create the criterion.
         Parameters:
             num_classes: number of object categories, omitting the special no-object category
@@ -178,6 +178,7 @@ class SetCriterion(nn.Module):
         empty_weight = torch.ones(self.num_classes + 1)
         empty_weight[-1] = self.eos_coef
         self.weight_soft_co = weight_soft_co
+        self.obj_ids_extra_sampling = obj_ids_extra_sampling if obj_ids_extra_sampling is not None else [2, 12, 13, 14]
 
         # Weights for object classes
         frequency_file_path = OBJECT_FREQUENCY_PATH
@@ -242,7 +243,9 @@ class SetCriterion(nn.Module):
         )
         target_classes[idx] = target_classes_o
         loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
-        soft_co_loss = soft_coactivation_loss(src_logits, target_classes, [(8,9)], reduction='sum')
+        # 31/07 changed
+        # soft_co_loss = soft_coactivation_loss(src_logits, target_classes, [(8,9)], reduction='sum')
+        soft_co_loss = 0.0
         losses = {"loss_class": loss_ce + self.weight_soft_co * soft_co_loss}
         return losses
     
@@ -298,10 +301,14 @@ class SetCriterion(nn.Module):
                 self.importance_sample_ratio,
             )
             # Sample specific classes for accuracy
+            num_points = self.num_points // 16
             obj_id = 2
-            num_points = 256
+            point_coords = sample_from_obj_id(target_labels, target_masks, obj_id, point_coords, num_points)
+            obj_id = 12
             point_coords = sample_from_obj_id(target_labels, target_masks, obj_id, point_coords, num_points)
             obj_id = 13
+            point_coords = sample_from_obj_id(target_labels, target_masks, obj_id, point_coords, num_points)
+            obj_id = 14
             point_coords = sample_from_obj_id(target_labels, target_masks, obj_id, point_coords, num_points)
             # get gt labels
             point_labels = point_sample(

@@ -11,9 +11,6 @@ import torch.nn.functional as F
 
 from torch.nn.init import trunc_normal_
 
-# from sam2.modeling.sam.mask_decoder import MaskDecoder
-# from sam2.modeling.sam.prompt_encoder import PromptEncoder
-# from sam2.modeling.sam.transformer import TwoWayTransformer
 from sam2.modeling.sam2_utils import get_1d_sine_pe, MLP, select_closest_cond_frames
 
 from .lib import ShapeSpec
@@ -33,6 +30,7 @@ class SAM2FormerBase(torch.nn.Module):
         query_memory_fusion=None,
         multiview=False,
         epipolar_attention=None,
+        flag_epipolar_attn_bias=False,
         mask_decoder_cfg: Dict[str, Any]=None,
         num_maskmem=7,  # default 1 input frame + 6 previous frames
         image_size=512,
@@ -193,26 +191,32 @@ class SAM2FormerBase(torch.nn.Module):
 
         # HEADS UP
         # Memory projection for multiobject
-        num_queries = self.sam_mask_decoder.predictor.num_queries
+        self.num_queries = self.sam_mask_decoder.predictor.num_queries
         if query_memory_fusion is None:
-            self.multi_object_memory_proj = torch.nn.Linear(num_queries,1)
-            self.multi_object_memory_pos_proj = torch.nn.Linear(num_queries,1)
+            self.multi_object_memory_proj = torch.nn.Linear(self.num_queries,1)
+            self.multi_object_memory_pos_proj = torch.nn.Linear(self.num_queries,1)
         else:
             self.multi_object_memory_proj = query_memory_fusion
 
         # Part 5: Epipolar attention
         self.multiview = multiview
-        if self.multiview:
+        self.flag_epipolar_attn_bias = flag_epipolar_attn_bias
+        if self.multiview and not flag_epipolar_attn_bias:
             self.epipolar_attention = epipolar_attention
             # Epipolar projection for multiobject
-            self.multi_object_epi_proj = torch.nn.Linear(num_queries,1)
-            self.multi_object_epi_pos_proj = torch.nn.Linear(num_queries,1)
+            self.multi_object_epi_proj = torch.nn.Linear(self.num_queries,1)
+            self.multi_object_epi_pos_proj = torch.nn.Linear(self.num_queries,1)
             # A single token to indicate no memory embedding from previous frames
             self.no_epipolar_embed = torch.nn.Parameter(torch.zeros(1, 1, self.hidden_dim))
             self.no_epipolar_pos_enc = torch.nn.Parameter(torch.zeros(1, 1, self.hidden_dim))
             # No-epipolar embedding projection for no epipolar objects
             self.no_epipolar_embed_proj = torch.nn.Linear(self.hidden_dim, self.mem_dim)
             trunc_normal_(self.no_epipolar_embed_proj.weight, std=0.02)
+        elif self.multiview and flag_epipolar_attn_bias:
+            self.epi_weights_alpha = torch.nn.Parameter(torch.ones(self.num_queries)) * 2
+            self.epi_weights_view = torch.nn.Parameter(torch.ones(3)) * 2
+            self.epipolar_attention = None
+            del epipolar_attention  # avoid unused argument warning
         else:
             self.epipolar_attention = None
             del epipolar_attention  # avoid unused argument warning
@@ -275,6 +279,7 @@ class SAM2FormerBase(torch.nn.Module):
         point_inputs=None,
         mask_inputs=None,
         high_res_features=None,
+        epipolar_attn_bias=None
     ):
         """
         Forward SAM prompt encoders and mask heads.
@@ -324,7 +329,7 @@ class SAM2FormerBase(torch.nn.Module):
         total_features = high_res_features + [backbone_features]
         assert len(total_features) == len(self.sam_mask_decoder.in_features), "Given number of input features and calculated input features do not match"
         in_feature_dict = {name:feat for name, feat in zip(self.sam_mask_decoder.in_features, total_features)}
-        predictions = self.sam_mask_decoder(in_feature_dict)
+        predictions = self.sam_mask_decoder(in_feature_dict, epipolar_attn_bias=epipolar_attn_bias)
         # predictions: pred_logits, pred_masks, aux_outputs
         # pred_logits: [B, num_Q, num_classes], pred_masks: [B, num_Q, H//4, W//4]
 
@@ -459,6 +464,33 @@ class SAM2FormerBase(torch.nn.Module):
         vision_pos_embeds = [x.flatten(2).permute(2, 0, 1) for x in vision_pos_embeds]
 
         return backbone_out, vision_feats, vision_pos_embeds, feat_sizes
+    
+    def _prepare_attention_biases(self, epipolar_dict, is_init_cond_frame, is_refinement):
+        """Prepare the epipolar attention biases."""
+        if is_init_cond_frame and not is_refinement:
+            # If this is the initial conditioning frame, we should not use any epipolar attention bias.
+            return None
+        assert epipolar_dict is not None, "Epipolar dictionary should not be None."
+        # Get the masks for the epipolar attention bias
+        epipolar_masks = epipolar_dict["epipolar_masks"].unsqueeze(1)  # [q, 1, H, W]
+        # Get the query positions
+        object_pos_label = epipolar_dict['object_positions_labels']
+        ordered_obj_label = list(object_pos_label.values())
+        # Put each object in their detection (query) order
+        epipolar_masks = epipolar_masks[ordered_obj_label]
+        # Downsample the masks to different resolutions [Q, 1, H, W] => [Q, H', W']
+        downsampled_epi_masks0 = F.interpolate(epipolar_masks, size=(16, 16), mode='bilinear', align_corners=False).squeeze(1)
+        downsampled_epi_masks1 = F.interpolate(epipolar_masks, size=(32, 32), mode='bilinear', align_corners=False).squeeze(1)
+        downsampled_epi_masks2 = F.interpolate(epipolar_masks, size=(64, 64), mode='bilinear', align_corners=False).squeeze(1)
+        # Flatten and mutliply with the alpha [Q, H'W']
+        downsampled_epi_masks0 = downsampled_epi_masks0.flatten(1) * self.epi_weights_alpha[:,None]
+        downsampled_epi_masks1 = downsampled_epi_masks1.flatten(1) * self.epi_weights_alpha[:,None]
+        downsampled_epi_masks2 = downsampled_epi_masks2.flatten(1) * self.epi_weights_alpha[:,None]
+        return [
+            downsampled_epi_masks0,
+            downsampled_epi_masks1,
+            downsampled_epi_masks2,
+        ]
 
     def _prepare_epipolar_conditioned_features(
         self,
@@ -702,12 +734,17 @@ class SAM2FormerBase(torch.nn.Module):
         memory_pos_embed = torch.cat(to_cat_memory_pos_embed, dim=0)
 
         # Step 3: Linear - max pool projection of object mask-memories
-        if False: 
-            memory = self.multi_object_memory_proj(memory.mT).mT
-        else:
-            memory = self.multi_object_memory_proj(memory.transpose(0,1)).transpose(0,1)
+        early_collapse = False
         memory_pos_embed = memory_pos_embed[:, 0:1]
-        # memory_pos_embed = self.multi_object_memory_pos_proj(memory_pos_embed.mT).mT
+        if early_collapse:
+            if False: 
+                memory = self.multi_object_memory_proj(memory.mT).mT
+            else:
+                memory = self.multi_object_memory_proj(memory.transpose(0,1)).transpose(0,1)
+        else:
+            Q = memory.shape[1]
+            current_vision_feats[0] = current_vision_feats[0].repeat(1, Q, 1)
+            current_vision_pos_embeds[0] = current_vision_pos_embeds[0].repeat(1, Q, 1)
 
         pix_feat_with_mem = self.memory_attention(
             curr=current_vision_feats,
@@ -716,6 +753,9 @@ class SAM2FormerBase(torch.nn.Module):
             memory_pos=memory_pos_embed,
             num_obj_ptr_tokens=num_obj_ptr_tokens,
         )
+        if not early_collapse:
+            pix_feat_with_mem = self.multi_object_memory_proj(pix_feat_with_mem.transpose(0,1)).transpose(0,1)
+
         # reshape the output (HW)BC => BCHW
         pix_feat_with_mem = pix_feat_with_mem.permute(1, 2, 0).view(B, C, H, W)
         return pix_feat_with_mem
@@ -825,7 +865,8 @@ class SAM2FormerBase(torch.nn.Module):
             #     mask_inputs = prev_sam_mask_logits
 
         # Epipolar lines fusion
-        if self.multiview:
+        epipolar_attn_bias = None
+        if self.multiview and not self.flag_epipolar_attn_bias:
             pix_feat = self._prepare_epipolar_conditioned_features(
                 frame_idx=frame_idx,
                 is_init_cond_frame=is_init_cond_frame,
@@ -835,12 +876,19 @@ class SAM2FormerBase(torch.nn.Module):
                 feat_sizes=feat_sizes[-1:],
                 encoded_epipolar_dict=encoded_epipolar_dict,
             )
+        elif self.multiview and self.flag_epipolar_attn_bias:
+            epipolar_attn_bias = self._prepare_attention_biases(
+                epipolar_dict=encoded_epipolar_dict,
+                is_init_cond_frame=is_init_cond_frame,
+                is_refinement=is_refinement,
+            )
 
         sam_outputs = self._forward_sam_heads(
                 backbone_features=pix_feat,
                 # point_inputs=point_inputs,
                 # mask_inputs=mask_inputs,
                 high_res_features=high_res_features,
+                epipolar_attn_bias=epipolar_attn_bias,
             )
 
         # Deep supervision is not used for batch size > 1, remove auxillary outputs

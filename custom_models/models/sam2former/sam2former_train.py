@@ -9,6 +9,7 @@ import time
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 import torch.distributed
 from .sam2former_base import SAM2FormerBase
 from sam2.modeling.sam2_utils import (
@@ -33,6 +34,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         multiview=False,
         epipolar_encoder=None,
         epipolar_attention=None,
+        flag_epipolar_attn_bias=False,
         prob_to_use_pt_input_for_train=0.0,
         prob_to_use_pt_input_for_eval=0.0,
         prob_to_use_box_input_for_train=0.0,
@@ -74,7 +76,14 @@ class SAM2FormerTrain(SAM2FormerBase):
         freeze_sam_mask_decoder=False,
         **kwargs,
     ):
-        super().__init__(image_encoder, memory_attention, memory_encoder, query_memory_fusion, multiview, epipolar_attention, **kwargs)
+        super().__init__(image_encoder=image_encoder,
+                         memory_attention=memory_attention,
+                         memory_encoder=memory_encoder,
+                         query_memory_fusion=query_memory_fusion,
+                         multiview=multiview,
+                         epipolar_attention=epipolar_attention,
+                         flag_epipolar_attn_bias=flag_epipolar_attn_bias,
+                         **kwargs)
         self.use_act_ckpt_iterative_pt_sampling = use_act_ckpt_iterative_pt_sampling
         self.forward_backbone_per_frame_for_eval = forward_backbone_per_frame_for_eval
 
@@ -116,8 +125,13 @@ class SAM2FormerTrain(SAM2FormerBase):
             for p in self.sam_mask_decoder.parameters():
                 p.requires_grad = False
 
-        if self.multiview:
+        if self.multiview and not self.flag_epipolar_attn_bias:
             self.epipolar_encoder = epipolar_encoder
+        elif self.multiview and self.flag_epipolar_attn_bias:
+            # self.epi_weights_alpha = torch.nn.Parameter(torch.ones(self.num_queries)) * 2
+            # self.epi_weights_view = torch.nn.Parameter(torch.ones(3)) * 2
+            self.epipolar_encoder = None
+            del epipolar_encoder  # avoid unused argument warning
         else:
             self.epipolar_encoder = None
             del epipolar_encoder  # avoid unused argument warning
@@ -315,12 +329,19 @@ class SAM2FormerTrain(SAM2FormerBase):
                 pix_feat = torch.vstack(list(feature_container_for_multiview_fusion.values()))
                 # NOTE pix_feats = (3, 256, 16, 16), epipolar_masks = (O, 3, H, W)
                 # NOTE pix_feat_for_mem = (1, 256, 16, 16) mask_for_mem = (23, 1, 256, 256)
-                # Encode the epipolar features
-                for view_idx in range(3):
-                    encoded_epipolars = self.epipolar_encoder(pix_feat[view_idx:view_idx+1], epipolar_masks[:,view_idx:view_idx+1])
-                    # dictionary with keys "vision_features" and "vision_pos_enc"
-                    encoded_epipolars['object_positions_labels'] = object_pos_label[view_idx]
-                    encoded_epipolar_dict[view_idx] = encoded_epipolars
+
+                if not self.flag_epipolar_attn_bias:
+                    # Encode the epipolar features
+                    for view_idx in range(3):
+                        encoded_epipolars = self.epipolar_encoder(pix_feat[view_idx:view_idx+1], epipolar_masks[:,view_idx:view_idx+1])
+                        # dictionary with keys "vision_features" and "vision_pos_enc"
+                        encoded_epipolars['object_positions_labels'] = object_pos_label[view_idx]
+                        encoded_epipolar_dict[view_idx] = encoded_epipolars
+                else:
+                    for view_idx in range(3):
+                        encoded_epipolars = {'epipolar_masks': epipolar_masks[:, view_idx]}
+                        encoded_epipolars['object_positions_labels'] = object_pos_label[view_idx]
+                        encoded_epipolar_dict[view_idx] = encoded_epipolars
 
                 # Run the refinement
                 current_out = self.track_step(

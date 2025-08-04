@@ -315,18 +315,7 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
         self.num_feature_levels = 3
         self.level_embed = nn.Embedding(self.num_feature_levels, hidden_dim)
         self.input_proj = nn.ModuleList()
-        # See what you can do!
-        # self.output_upscaling = nn.Sequential(
-        #     nn.ConvTranspose2d(
-        #         hidden_dim, hidden_dim // 4, kernel_size=2, stride=2
-        #     ),
-        #     LayerNorm2d(hidden_dim // 4),
-        #     activation(),
-        #     nn.ConvTranspose2d(
-        #         hidden_dim // 4, hidden_dim // 8, kernel_size=2, stride=2
-        #     ),
-        #     activation(),
-        # )
+
         for _ in range(self.num_feature_levels):
             if in_channels != hidden_dim or enforce_input_project:
                 self.input_proj.append(Conv2d(in_channels, hidden_dim, kernel_size=1))
@@ -366,7 +355,7 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
 
         return ret
 
-    def forward(self, x, mask_features, mask=None):
+    def forward(self, x, mask_features, mask=None, epipolar_attn_bias=None):
         # x is a list of multi-scale feature
         assert len(x) == self.num_feature_levels
         src = []
@@ -403,11 +392,16 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
             level_index = i % self.num_feature_levels
             attn_mask[torch.where(attn_mask.sum(-1) == attn_mask.shape[-1])] = False
             # attention: cross-attention first
+            if attn_mask is not None and epipolar_attn_bias is not None:
+                attn_mask = attn_mask.float().masked_fill(attn_mask, float('-inf'))
+                attn_mask += epipolar_attn_bias[level_index].unsqueeze(0).repeat(attn_mask.shape[0], 1, 1)
+
             output = self.transformer_cross_attention_layers[i](
                 output, src[level_index],
                 memory_mask=attn_mask,
                 memory_key_padding_mask=None,  # here we do not apply masking on padded region
-                pos=pos[level_index], query_pos=query_embed
+                pos=pos[level_index], query_pos=query_embed,
+                # epipolar_attn_bias=epipolar_attn_bias if epipolar_attn_bias is not None else None
             )
 
             output = self.transformer_self_attention_layers[i](
@@ -415,7 +409,7 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
                 tgt_key_padding_mask=None,
                 query_pos=query_embed
             )
-            
+
             # FFN
             output = self.transformer_ffn_layers[i](
                 output

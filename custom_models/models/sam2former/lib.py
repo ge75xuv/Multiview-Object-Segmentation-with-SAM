@@ -68,6 +68,16 @@ def load_state_dict_into_model(
     if checkpoint_kernels is not None:
         for f in checkpoint_kernels:
             state_dict = f(state_dict=state_dict)
+
+    # Sanity check
+    model_fuse = model.multi_object_memory_proj.score_mlp[0].weight.shape[1]
+    sd_fuse = state_dict['multi_object_memory_proj.score_mlp.0.weight'].shape[1]
+    if model_fuse != sd_fuse:
+        Warning(f"Model fuse size {model_fuse} does not match state dict fuse size {sd_fuse}.")
+        # Remove the multi_object_memory_proj from the state dict
+        state_dict = {k: v for k, v in state_dict.items() if not k.startswith('multi_object_memory_proj')}
+
+    # Load state dict
     missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
     # Ignore check_load_state_dict_errors
     missing_keys = [k for k in missing_keys if not (k.startswith("sam_mask_decoder") or
@@ -199,10 +209,10 @@ def sample_from_obj_id(target_labels, target_masks, obj_id, point_coords, num_po
             w_coords = mask_pts[2]
             h_coords = mask_pts[1]
         # Normalize the coordinates to [0, 1]
-        w_normalized = w_coords.float() / (W - 1)
-        h_normalized = h_coords.float() / (H - 1)
+        w_normalized = w_coords.float() / (W)
+        h_normalized = h_coords.float() / (H)
 
-        sampled_points = torch.stack([h_normalized, w_normalized], dim=1)  # [N_sampled, 2]
+        sampled_points = torch.stack([w_normalized, h_normalized], dim=1)  # [N_sampled, 2]
 
         # Add batch dimension and concatenate
         batch_size = point_coords.shape[0]

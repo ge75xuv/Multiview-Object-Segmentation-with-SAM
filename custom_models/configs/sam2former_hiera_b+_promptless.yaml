@@ -2,14 +2,17 @@
 
 scratch:
   resolution: 512
-  train_batch_size: 2
+  num_sampling_points: 4096  # 1024, 4096
+  train_batch_size: 4
   num_train_workers: 1
-  base_lr: 3.0e-5  # 5.0e-6
-  vision_lr: 3.0e-5  # 3.0e-06
+  base_lr: 3.0e-6  # 5.0e-6
+  vision_lr: 3.0e-6  # 3.0e-06
   obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29]
+  obj_ids_extra_sampling: [2, 12, 13, 14]  # extra object ids to sample from for accuracy
   num_frames: 1
   multiview: false
-  max_epochs: 75
+  flag_epipolar_attn_bias: false  # use epipolar attention bias
+  max_epochs: 70
   # Decoder
   num_queries: 23
   num_classes: 23
@@ -154,12 +157,13 @@ trainer:
             use_dwconv: True  # depth-wise convs
           num_layers: 2
 
-    # query_memory_fusion:
-    #   _target_: custom_models.models.sam2former.query_memory_fusion.QueryMemoryFusion
-    #   num_queries: ${scratch.num_queries}
-    #   embed_dim: 64
-    #   hidden_dim: 128
-    #   fusion_type: early
+    query_memory_fusion:
+      _target_: custom_models.models.sam2former.query_memory_fusion.QueryMemoryFusion
+      num_queries: ${scratch.num_queries}
+      embed_dim: ${scratch.mask_dim}  # ${trainer.model.memory_encoder.out_dim}
+      hidden_dim: 128
+      fusion_type: no
+      learn_query_embed: False
 
     # Decoder
     mask_decoder_cfg:
@@ -260,6 +264,7 @@ trainer:
 
     num_maskmem: 7
     image_size: ${scratch.resolution}
+    flag_epipolar_attn_bias: ${scratch.flag_epipolar_attn_bias}  # use epipolar attention bias
     # apply scaled sigmoid on mask logits for memory encoder, and directly feed input mask as output mask
     sigmoid_scale_for_mem_enc: 20.0
     sigmoid_bias_for_mem_enc: -10.0
@@ -421,7 +426,8 @@ trainer:
       loss_weighting: log  # HEADS UP: log linear or default
       weight_soft_co: 0.1
       losses: ['labels', 'masks']
-      num_points: 4096
+      num_points: ${scratch.num_sampling_points}
+      obj_ids_extra_sampling: ${scratch.obj_ids_extra_sampling}
       oversample_ratio: 3.0
       importance_sample_ratio: 0.75
       image_size: ${scratch.resolution}
@@ -445,7 +451,7 @@ trainer:
       loss_weighting: log  # HEADS UP: log linear or default
       weight_soft_co: 0.1
       losses: ['labels', 'masks']
-      num_points: 4096
+      num_points: ${scratch.num_sampling_points}
       oversample_ratio: 3.0
       importance_sample_ratio: 0.75
       image_size: ${scratch.resolution}
@@ -470,9 +476,9 @@ trainer:
     # NOTE: HEADS UP 
     # resume_from: sam2_logs/06_27_17_54/checkpoints/checkpoint_27.pt
     # resume_from: sam2_logs/06_13_09_45/checkpoints/checkpoint_45.pt
-    # resume_from: sam2_logs/07_12_10_18/checkpoints/checkpoint_51.pt
+    # resume_from: sam2_logs/07_12_10_18_def2/checkpoints/checkpoint_51.pt
     # resume_from: sam2_logs/07_17_21_33/checkpoints/checkpoint_65.pt
-    resume_from: sam2_logs/07_26_09_10/checkpoints/checkpoint_75.pt
+    # resume_from: sam2_logs/07_27_17_33/checkpoints/checkpoint_78.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
     save_freq: 1 # 0 only last checkpoint is saved.
     model_weight_initializer:
@@ -485,13 +491,16 @@ trainer:
         _target_: training.utils.checkpoint_utils.load_checkpoint_and_apply_kernels
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/models/sam2/checkpoints/sam2.1_hiera_base_plus.pt # PATH to SAM 2.1 checkpoint
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/06_13_09_45/checkpoints/checkpoint_45.pt
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_12_10_18_def2/checkpoints/checkpoint_51.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_26_09_10/checkpoints/checkpoint_65.pt
-        checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_26_09_10/checkpoints/checkpoint_75.pt
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_29_16_47/checkpoints/checkpoint_53.pt
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_27_17_33/checkpoints/checkpoint_78.pt
+        checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_31_15_02/checkpoints/checkpoint_33.pt
         ckpt_state_dict_keys: ['model']
 
 launcher:
   num_nodes: 1
-  gpus_per_node: 2
+  gpus_per_node: 1
   experiment_log_dir: null # Path to log directory, defaults to ./sam2_logs/${config_name}
 
 # SLURM args if running on a cluster

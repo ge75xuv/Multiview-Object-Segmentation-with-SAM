@@ -80,10 +80,10 @@ class MaskFormerHead(nn.Module):
 
         self.num_classes = num_classes
 
-    def forward(self, features, mask=None):
-        return self.layers(features, mask)
+    def forward(self, features, mask=None, epipolar_attn_bias=None):
+        return self.layers(features, mask, epipolar_attn_bias)
 
-    def layers(self, features, mask=None):
+    def layers(self, features, mask=None, epipolar_attn_bias=None):
         mask_features, transformer_encoder_features, multi_scale_features = self.pixel_decoder.forward_features(features)
-        predictions = self.predictor(multi_scale_features, mask_features, mask)
+        predictions = self.predictor(multi_scale_features, mask_features, mask, epipolar_attn_bias=epipolar_attn_bias)
         return predictions
