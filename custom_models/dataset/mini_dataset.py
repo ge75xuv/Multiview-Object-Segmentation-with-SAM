@@ -13,6 +13,7 @@ from tqdm import tqdm
 
 from custom_models.helpers.configurations import *
 from custom_models.helpers.load_camera_data import load_camera_data
+from custom_models.helpers.load_depth_image import load_depth_image
 
 class MiniDataset(Dataset):
     
@@ -25,6 +26,7 @@ class MiniDataset(Dataset):
                  collate_fn,
                  label_projection_type:str='default',
                  multiview:bool=False,
+                 depth_image:bool=False,
                  batch_size:int=1,
                  num_workers:int=0,
                  **kwargs):
@@ -39,6 +41,7 @@ class MiniDataset(Dataset):
         super().__init__()
         # Arguments
         self.multiview = multiview
+        self.depth_image = depth_image
         self.num_frames = num_frames
         self.batch_size = batch_size
         self.num_workers= num_workers
@@ -113,12 +116,9 @@ class MiniDataset(Dataset):
                         take_images[c_idx].append(rgb_path)
                         take_seg_masks[c_idx].append(interpolated_mask_path)
 
-                # NOTE Multiview is experimental and tested with azure cameras only
-                if len(take_seg_masks[1]) == 0 and self.multiview:
-                    break
-
                 # assume azure is not available, use simstation instead
-                if len(take_seg_masks[1]) == 0:
+                # NOTE Multiview is experimental and tested with azure cameras only
+                if len(take_seg_masks[1]) == 0 and not self.multiview:
                     assert flag_simstation, "The azure file should not exist!"
                     assert len(take_seg_masks[1]) + len(take_seg_masks[4]) + len(take_seg_masks[5]) == 0, "Azure images from eah camera should not exist!"
                     for c_idx in [0, 2, 3]:
@@ -145,7 +145,7 @@ class MiniDataset(Dataset):
                     camera_int_ext.append((intr, ext))
                     self.camera_features[take_folder] = camera_int_ext
 
-            # For multiview we get only the mututal timestamps
+            # For multiview we get only the mutual timestamps
             if self.multiview:
                 time_ids = {k: [str(path).split('/')[-1].split('_')[1].split('.')[0] for path in take_images[k]] for k in take_images.keys()}
                 mutual_ids = [id for id in time_ids[1] if (id in time_ids[4]) and (id in time_ids[5])]
@@ -275,6 +275,9 @@ class MiniDataset(Dataset):
 
             # Append the video datapoint to the container
             img_view_container.append(video_datapoint)
+
+            if self.depth_image:
+                depth_images = load_depth_image(video_frames, size_x_y)
 
         if not self.multiview:
             return img_view_container[0]

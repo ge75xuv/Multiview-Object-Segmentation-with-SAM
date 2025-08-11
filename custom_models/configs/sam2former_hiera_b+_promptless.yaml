@@ -1,9 +1,9 @@
 # @package _global_
 
 scratch:
-  resolution: 512
+  resolution: 256
   num_sampling_points: 4096  # 1024, 4096
-  train_batch_size: 4
+  train_batch_size: 1
   num_train_workers: 1
   base_lr: 3.0e-6  # 5.0e-6
   vision_lr: 3.0e-6  # 3.0e-06
@@ -487,6 +487,7 @@ trainer:
     # resume_from: sam2_logs/07_12_10_18_def2/checkpoints/checkpoint_51.pt
     # resume_from: sam2_logs/07_17_21_33/checkpoints/checkpoint_65.pt
     # resume_from: sam2_logs/07_27_17_33/checkpoints/checkpoint_78.pt
+    # resume_from: sam2_logs/08_10_20_21/checkpoints/checkpoint_9.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
     save_freq: 1 # 0 only last checkpoint is saved.
     model_weight_initializer:
@@ -505,11 +506,12 @@ trainer:
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_27_17_33/checkpoints/checkpoint_78.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_31_15_02/checkpoints/checkpoint_33.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_03_21_22/checkpoints/checkpoint_37.pt
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_10_20_21/checkpoints/checkpoint_9.pt
         ckpt_state_dict_keys: ['model']
 
 launcher:
   num_nodes: 1
-  gpus_per_node: 2
+  gpus_per_node: 1
   experiment_log_dir: null # Path to log directory, defaults to ./sam2_logs/${config_name}
 
 # SLURM args if running on a cluster
