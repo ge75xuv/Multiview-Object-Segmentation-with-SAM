@@ -309,7 +309,7 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
 
         # Technically we dont need to check if the points are None, since the epipolar mask function will handle it
         # But we do it here to avoid unnecessary computation if the points are not available
-        if pts_cam0 is None or pts_cam1 is None or pts_cam2 is None:
+        if pts_cam0 is None and pts_cam1 is None and pts_cam2 is None:
             masks[obj_idx] = torch.zeros([3, h, w], dtype=torch.float32)
             continue
 

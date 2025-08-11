@@ -30,6 +30,7 @@ class SAM2FormerBase(torch.nn.Module):
         query_memory_fusion=None,
         multiview=False,
         epipolar_attention=None,
+        query_epipolar_fusion=None,
         flag_epipolar_attn_bias=False,
         mask_decoder_cfg: Dict[str, Any]=None,
         num_maskmem=7,  # default 1 input frame + 6 previous frames
@@ -204,8 +205,7 @@ class SAM2FormerBase(torch.nn.Module):
         if self.multiview and not flag_epipolar_attn_bias:
             self.epipolar_attention = epipolar_attention
             # Epipolar projection for multiobject
-            self.multi_object_epi_proj = torch.nn.Linear(self.num_queries,1)
-            self.multi_object_epi_pos_proj = torch.nn.Linear(self.num_queries,1)
+            self.multi_object_epi_proj = query_epipolar_fusion
             # A single token to indicate no memory embedding from previous frames
             self.no_epipolar_embed = torch.nn.Parameter(torch.zeros(1, 1, self.hidden_dim))
             self.no_epipolar_pos_enc = torch.nn.Parameter(torch.zeros(1, 1, self.hidden_dim))
@@ -539,14 +539,19 @@ class SAM2FormerBase(torch.nn.Module):
         #NOTE THIS APPROACH IS NOT POSSIBLE SINCE THE EMBEDDING DIMENSIONS ARE NOT THE SAME (EPIPOLAR ENCODING CHANGES EMBEDDING DIMENSION)
         multi_obj_no_epipolar_embed = torch.zeros_like(epi_feats)
         no_epipolar_mask = [pos for pos, lbl in object_pos_label.items() if lbl not in OBJECTS_EPIPOLAR]
-        no_epipolar_object_embed = self.no_epipolar_embed_proj(self.no_epipolar_embed) 
+        no_epipolar_object_embed = self.no_epipolar_embed_proj(self.no_epipolar_embed)
         multi_obj_no_epipolar_embed[:, no_epipolar_mask] = no_epipolar_object_embed
         epi_feats += multi_obj_no_epipolar_embed
 
         # Step 4: Max pool projection of object mask-memories
-        epi_feats = self.multi_object_epi_proj(epi_feats.mT).mT
+        # epi_feats = self.multi_object_epi_proj(epi_feats.mT).mT
         epi_pos_enc = epi_pos_enc[:, 0:1]
         # epi_pos_enc = self.multi_object_epi_pos_proj(epi_pos_enc.mT).mT
+        
+        if current_vision_feats.shape[0] != epi_feats.shape[1]:
+            Q = epi_feats.shape[1]
+            current_vision_feats[0] = current_vision_feats[0].repeat(1, Q, 1)
+            current_vision_pos_embeds[0] = current_vision_pos_embeds[0].repeat(1, Q, 1)
 
         pix_feat_with_epi = self.epipolar_attention(
             curr=[current_vision_feats],
@@ -555,6 +560,9 @@ class SAM2FormerBase(torch.nn.Module):
             epi_pos_enc=epi_pos_enc,
             num_obj_ptr_tokens=0,  # no object pointers in epipolar attention
         )
+
+        epi_feats = self.multi_object_epi_proj(epi_feats.mT).mT
+
         # reshape the output (HW)BC => BCHW
         pix_feat_with_epi = pix_feat_with_epi.permute(1, 2, 0).view(B, C, H, W)
         return pix_feat_with_epi

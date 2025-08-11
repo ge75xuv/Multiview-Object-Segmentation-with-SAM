@@ -70,15 +70,28 @@ def load_state_dict_into_model(
             state_dict = f(state_dict=state_dict)
 
     # Sanity check
-    model_fuse = model.multi_object_memory_proj.score_mlp[0].weight.shape[1]
-    sd_fuse = state_dict['multi_object_memory_proj.score_mlp.0.weight'].shape[1]
-    if model_fuse != sd_fuse:
-        Warning(f"Model fuse size {model_fuse} does not match state dict fuse size {sd_fuse}.")
-        # Remove the multi_object_memory_proj from the state dict
-        state_dict = {k: v for k, v in state_dict.items() if not k.startswith('multi_object_memory_proj')}
+    try:
+        model_fuse = model.multi_object_memory_proj.score_mlp[0].weight.shape[1]
+        sd_fuse = state_dict['multi_object_memory_proj.score_mlp.0.weight'].shape[1]
+        if model_fuse != sd_fuse:
+            Warning(f"Model fuse size {model_fuse} does not match state dict fuse size {sd_fuse}.")
+            # Remove the multi_object_memory_proj from the state dict
+            state_dict = {k: v for k, v in state_dict.items() if not k.startswith('multi_object_memory_proj')}
+    except:
+        Warning(f"Base model checkpoint is used")
 
     # Load state dict
     missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+    #TODO maybe we just use one projection layer
+    # Load the multi object memory proj as multi object epipolar projection
+    len_missing_keys = len(missing_keys)
+    missing_keys = [k for k in missing_keys if not (k.startswith("multi_object_epi"))]  # Custom multi-object epipolar
+    epipolar_proj_sd_missing = len_missing_keys - len(missing_keys) > 0
+    if epipolar_proj_sd_missing:
+        epipolar_proj_sd = {'.'.join(key.split('.')[1:]) : value for key, value in state_dict.items() 
+                             if key.startswith('multi_object_memory')}
+        model.multi_object_epi_proj.load_state_dict(epipolar_proj_sd)
+
     # Ignore check_load_state_dict_errors
     missing_keys = [k for k in missing_keys if not (k.startswith("sam_mask_decoder") or
                                                   k.startswith("multi_object_memory") or  # Custom multi-object memory
@@ -89,7 +102,7 @@ def load_state_dict_into_model(
     unexpected_keys = [k for k in unexpected_keys 
                        if not (k.startswith("sam_mask_decoder") or
                                k.startswith("sam_prompt_encoder") or
-                               k.startswith("memory") or
+                               k.startswith("memory") or  # Included in base model checkpoint
                                k.startswith("multi_object_memory"))  # Memory part projection is changed
                        ]
 

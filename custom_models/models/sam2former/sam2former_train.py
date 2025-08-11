@@ -34,6 +34,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         multiview=False,
         epipolar_encoder=None,
         epipolar_attention=None,
+        query_epipolar_fusion=None,
         flag_epipolar_attn_bias=False,
         prob_to_use_pt_input_for_train=0.0,
         prob_to_use_pt_input_for_eval=0.0,
@@ -82,6 +83,7 @@ class SAM2FormerTrain(SAM2FormerBase):
                          query_memory_fusion=query_memory_fusion,
                          multiview=multiview,
                          epipolar_attention=epipolar_attention,
+                         query_epipolar_fusion=query_epipolar_fusion,
                          flag_epipolar_attn_bias=flag_epipolar_attn_bias,
                          **kwargs)
         self.use_act_ckpt_iterative_pt_sampling = use_act_ckpt_iterative_pt_sampling

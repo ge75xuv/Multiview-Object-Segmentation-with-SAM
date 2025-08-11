@@ -14,7 +14,7 @@ scratch:
   flag_epipolar_attn_bias: false  # use epipolar attention bias
   max_epochs: 70
   # Decoder
-  num_queries: 23
+  num_queries: 30
   num_classes: 23
   label_projection_type: 'default'  # 'default' or 'human'
   mask_dim: 256
@@ -158,6 +158,14 @@ trainer:
           num_layers: 2
 
     query_memory_fusion:
+      _target_: custom_models.models.sam2former.query_memory_fusion.QueryMemoryFusion
+      num_queries: ${scratch.num_queries}
+      embed_dim: ${scratch.mask_dim}  # ${trainer.model.memory_encoder.out_dim}
+      hidden_dim: 128
+      fusion_type: no
+      learn_query_embed: False
+
+    query_epipolar_fusion:
       _target_: custom_models.models.sam2former.query_memory_fusion.QueryMemoryFusion
       num_queries: ${scratch.num_queries}
       embed_dim: ${scratch.mask_dim}  # ${trainer.model.memory_encoder.out_dim}
@@ -489,18 +497,19 @@ trainer:
       ignore_missing_keys: null
       state_dict:
         _target_: training.utils.checkpoint_utils.load_checkpoint_and_apply_kernels
-        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/models/sam2/checkpoints/sam2.1_hiera_base_plus.pt # PATH to SAM 2.1 checkpoint
+        checkpoint_path: /home/guests/tuna_gurbuz/prototype/models/sam2/checkpoints/sam2.1_hiera_base_plus.pt # PATH to SAM 2.1 checkpoint
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/06_13_09_45/checkpoints/checkpoint_45.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_12_10_18_def2/checkpoints/checkpoint_51.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_26_09_10/checkpoints/checkpoint_65.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_29_16_47/checkpoints/checkpoint_53.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_27_17_33/checkpoints/checkpoint_78.pt
-        checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_31_15_02/checkpoints/checkpoint_33.pt
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_31_15_02/checkpoints/checkpoint_33.pt
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_03_21_22/checkpoints/checkpoint_37.pt
         ckpt_state_dict_keys: ['model']
 
 launcher:
   num_nodes: 1
-  gpus_per_node: 1
+  gpus_per_node: 2
   experiment_log_dir: null # Path to log directory, defaults to ./sam2_logs/${config_name}
 
 # SLURM args if running on a cluster
