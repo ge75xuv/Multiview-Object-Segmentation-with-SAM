@@ -548,9 +548,9 @@ class SAM2FormerBase(torch.nn.Module):
         epi_pos_enc = epi_pos_enc[:, 0:1]
         # epi_pos_enc = self.multi_object_epi_pos_proj(epi_pos_enc.mT).mT
         
-        if current_vision_feats.shape[0] != epi_feats.shape[1]:
+        if current_vision_feats.shape[1] != epi_feats.shape[1]:
             Q = epi_feats.shape[1]
-            current_vision_feats[0] = current_vision_feats[0].repeat(1, Q, 1)
+            current_vision_feats = current_vision_feats.repeat(1, Q, 1)
             current_vision_pos_embeds[0] = current_vision_pos_embeds[0].repeat(1, Q, 1)
 
         pix_feat_with_epi = self.epipolar_attention(
@@ -561,7 +561,7 @@ class SAM2FormerBase(torch.nn.Module):
             num_obj_ptr_tokens=0,  # no object pointers in epipolar attention
         )
 
-        epi_feats = self.multi_object_epi_proj(epi_feats.mT).mT
+        pix_feat_with_epi = self.multi_object_epi_proj(pix_feat_with_epi.transpose(0,1)).transpose(0,1)
 
         # reshape the output (HW)BC => BCHW
         pix_feat_with_epi = pix_feat_with_epi.permute(1, 2, 0).view(B, C, H, W)

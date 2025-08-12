@@ -230,13 +230,30 @@ LABEL_PROJECTION_MAP = {
 
 # These are the objects that are used for epipolar projection
 OBJECTS_EPIPOLAR = [
-    0,  # Instrument Table
-    4,  # Patient
-    # 6,  # Human
-    7,  # Drill
-    8,  # Hammer
-    9,  # Saw
-    10,  # Tracker
-    11,  # Mako Robot
-    12,  # Monitor
+    0,  # 'instrument_table'
+    4,  # 'patient'
+    12,  # 'drill'
+    13,  # 'hammer'
+    14,  # 'saw'
+    16,  # 'mako_robot'
+    17,  # 'monitor'
+
+    # 0,  # Instrument Table
+    # 4,  # Patient
+    # # 6,  # Human
+    # 7,  # Drill
+    # 8,  # Hammer
+    # 9,  # Saw
+    # 10,  # Tracker
+    # 11,  # Mako Robot
+    # 12,  # Monitor
+]
+
+OBJECTS_DEPTH_PROJ = [
+    6,  # 'anest'
+    7,  # 'circulator'
+    8,  # 'assistant_surgeon'
+    9,  # 'head_surgeon'
+    10,  # 'mps'
+    11,  # 'nurse'
 ]

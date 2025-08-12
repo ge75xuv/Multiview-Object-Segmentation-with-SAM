@@ -8,7 +8,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 import torch
 
-from helpers.configurations import OBJECTS_EPIPOLAR, LABEL_PROJECTION_MAP
+from helpers.configurations import OBJECTS_EPIPOLAR, LABEL_PROJECTION_MAP, OBJECTS_DEPTH_PROJ
+from custom_models.models.sam2former.point_cloud_mask import depth_preprocess, point_cloud_main
 
 VIEW_COMBINATIONS = {
     0: ["epi_lines_1_to_0", "epi_lines_2_to_0"],
@@ -21,7 +22,8 @@ def skew(t):
         [0, -t[2], t[1]],
         [t[2], 0, -t[0]],
         [-t[1], t[0], 0]
-    ])
+    ], device=t.device
+)
 
 def compute_epipolar_lines(ext, K_line, K_pt, pts1):
     # pts1: Nx2 array
@@ -31,13 +33,13 @@ def compute_epipolar_lines(ext, K_line, K_pt, pts1):
     inv_K1 = torch.linalg.inv(K_line)
     inv_K0 = torch.linalg.inv(K_pt)
     device = pts1.device
-    F = (inv_K1.mT @ E @ inv_K0).to(device)  # TODO: K0, K1 replaced
+    F = (inv_K1.mT @ E @ inv_K0).to(device)  # NOTE: K0, K1 replaced
     pts1_h = torch.hstack((pts1, torch.ones((pts1.shape[0], 1), device=device)))  # homogeneous
     lines2 = (F @ pts1_h.mT).mT  # Each row is [a, b, c]
     return lines2
 
 def compute_inverse_transformation(ext):
-    inv = torch.zeros((4, 4), dtype=torch.float32)
+    inv = torch.zeros((4, 4), dtype=torch.float32, device=ext.device)
     inv[:3, :3] = ext[:3,:3].T
     inv[:3, 3] = -ext[:3,:3].T @ ext[:3, 3]
     return inv
@@ -261,9 +263,9 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
                   epipolar_weight: float = 0.5,
                   n_points: Optional[int] = 4096,
                   step: Optional[int] = 2,
+                  depth_images=None,
                   ):
     """Wrap the epipolar functionality to be used in the training class."""
-
     # Get the logits from each camera's predictions.
     pred_class0 = torch.Tensor(predictions0['pred_logits']).softmax(dim=-1).argmax(dim=-1)
     pred_class1 = torch.Tensor(predictions1['pred_logits']).softmax(dim=-1).argmax(dim=-1)
@@ -275,6 +277,9 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
     unique_projected_labels = set([obj['label'] for obj in LABEL_PROJECTION_MAP['default'].values()])
     # unique_projected_labels = [i for i in range(num_queries)]  # TODO: get it from the config num_classes
     masks = torch.zeros([len(unique_projected_labels), 3, h, w], dtype=torch.float32, device=device)
+
+    # Send camera matrices to cuda
+    camera_int_ext = [(cam_mtrcs[0].to(device), cam_mtrcs[1].to(device)) for cam_mtrcs in camera_int_ext]
 
     # Object position dictionary
     object_pos_label = {view_idx:{pos_idx:None for pos_idx in range(o)} for view_idx in range(3)}
@@ -295,7 +300,9 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
         object_pos_label[2].update(dict.fromkeys(pos_obj2[1].tolist(), obj_idx))
 
         # Get the position and continue if the object is not epipolarly tracked
-        if obj_idx not in OBJECTS_EPIPOLAR:
+        epi_object = obj_idx in OBJECTS_EPIPOLAR
+        depth_object = obj_idx in OBJECTS_DEPTH_PROJ
+        if not epi_object and not depth_object:
             masks[obj_idx] = torch.zeros([3, h, w], dtype=torch.float32)
             continue
 
@@ -313,8 +320,12 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
             masks[obj_idx] = torch.zeros([3, h, w], dtype=torch.float32)
             continue
 
-        # Run the epipolar mask function
-        epi_mask_for_views = epipolar_mask(camera_int_ext, pts_cam0, pts_cam1, pts_cam2, mask_cam0.shape[-2:], step=step)
+        if depth_object:
+            # Point cloud projection wrapper
+            point_cloud_main(camera_int_ext, pts_cam0, pts_cam1, pts_cam2, depth_images, mask_cam0.shape[-2:])
+        else:
+            # Run the epipolar mask function
+            epi_mask_for_views = epipolar_mask(camera_int_ext, pts_cam0, pts_cam1, pts_cam2, mask_cam0.shape[-2:], step=step)
 
         # Epipolar mask post processing
         mask = epipolar_mask_post_process(epi_mask_for_views, mask_cam0.shape[-2:], epipolar_weight, device)

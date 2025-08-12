@@ -261,6 +261,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         }
         view_inputs = [input[idx] for idx in range(3)] if self.multiview else [input]
         camera_int_ext = input.camera_intrinsics_extrinsics if self.multiview else None
+        depth_images = {0:input.view1_depth, 1:input.view2_depth, 2:input.view3_depth} if self.multiview else None
         feature_container_for_multiview_fusion = {}
         encoded_epipolar_dict = {0: {}, 1: {}, 2: {}}
         # t_stage = time.time()
@@ -320,11 +321,13 @@ class SAM2FormerTrain(SAM2FormerBase):
                 pred0 = output_dict[0]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[0]["non_cond_frame_outputs"][stage_id]
                 pred1 = output_dict[1]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[1]["non_cond_frame_outputs"][stage_id]
                 pred2 = output_dict[2]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[2]["non_cond_frame_outputs"][stage_id]
-                epipolar_masks, object_pos_label = epipolar_main(camera_int_ext, 
+                stage_depth_images = {k: depth_images[k][stage_id] for k in range(3)} if depth_images[0] is not None else None
+                epipolar_masks, object_pos_label = epipolar_main(camera_int_ext,
                                                                  pred0,
                                                                  pred1,
                                                                  pred2,
-                                                                 self.sam_mask_decoder.predictor.num_queries)
+                                                                 self.sam_mask_decoder.predictor.num_queries,
+                                                                 depth_images=stage_depth_images)
                 epipolar_masks = epipolar_masks.to(self.device)
                 # Scale the epipolar masks and add bias (Use the same scale and bias as in the memory encoder)
                 epipolar_masks = epipolar_masks.sigmoid() * self.sigmoid_scale_for_mem_enc + self.sigmoid_bias_for_mem_enc

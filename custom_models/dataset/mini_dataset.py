@@ -258,6 +258,7 @@ class MiniDataset(Dataset):
         indeces = index * 3 + np.array([0, 1, 2]) if self.multiview else [index]
         img_view_container = []
         take_name = str(self.images[indeces[0]][0]).split('/')[-3]  # View Index:0 Frame Index:0
+        depth_images_all_views = []
         for index in indeces:
             video_frames = self.images[index]
             video_frames_segmentation_mask = self.segmentation_masks[index]
@@ -278,9 +279,12 @@ class MiniDataset(Dataset):
 
             if self.depth_image:
                 depth_images = load_depth_image(video_frames, size_x_y)
+                depth_images_all_views.append(depth_images)
 
         if not self.multiview:
             return img_view_container[0]
+        elif self.depth_image:
+            return img_view_container, self.camera_features[take_name], depth_images_all_views
         return img_view_container, self.camera_features[take_name]
 
     def _open_and_process(self, video_frames, video_frames_segmentation_mask):

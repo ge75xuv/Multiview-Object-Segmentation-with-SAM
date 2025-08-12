@@ -28,6 +28,9 @@ class MultiviewBatchedVideoDatapoint:
     view2_batchvideo: BatchedVideoDatapoint
     view3_batchvideo: BatchedVideoDatapoint
     camera_intrinsics_extrinsics: List[Tuple[torch.Tensor, torch.Tensor]]  # List of tuples (intrinsics, extrinsics) for each view
+    view1_depth: List[torch.Tensor] = None  # Optional depth images for view 1
+    view2_depth: List[torch.Tensor] = None  # Optional depth images for view 2
+    view3_depth: List[torch.Tensor] = None  # Optional depth images for view 3
 
     def __getitem__(self, idx: int) -> BatchedVideoDatapoint:
         """
@@ -58,6 +61,7 @@ def collate_fn_wrapper(
     A wrapper function for multiview VideoDataPoint. 
     CASE Single View: Batch is a list of VideoDatapoint.
     CASE Multiview: Batch is a list of tuple(s) which contains VideoDatapoints from 3 views and camera data.
+    CASE Multiview + Depth: Batch is a list of tuple(s) which contains VideoDatapoints from 3 views, camera data, and depth images.
     """
     # Not multiview case
     if isinstance(batch[0], VideoDatapoint):  # In the batch list, there is only VideoDatapoint(s)
@@ -66,13 +70,20 @@ def collate_fn_wrapper(
     # Multiview case
     assert isinstance(batch[0][0], list), "Batch should be a list of lists for multiview data."
     assert len(batch) == 1, "Cannot support batch size > 1 for multiview data."
-    assert len(batch[0]) == 2, "Batch should contain VideoDatapoints and camera data."
+    assert num_frames == len(batch[0][0][0].frames), "Inconsistent number of frames across views."
+    # assert len(batch[0]) == 2, "Batch should contain VideoDatapoints and camera data."
     assert len(batch[0][0]) == 3, "Batch should contain exactly 3 views for multiview data."
 
-    view_batchvideo = [None, None, None, batch[0][1]]
-    for idx, bc_view in enumerate(batch[0][0]):
-        view_batchvideo[idx] = collate_fn([bc_view], dict_key=dict_key)
-    return MultiviewBatchedVideoDatapoint(*view_batchvideo)
+    if len(batch[0]) == 2:  # Multiview without depth images
+        view_batchvideo = [None, None, None, batch[0][1]]
+        for idx, bc_view in enumerate(batch[0][0]):
+            view_batchvideo[idx] = collate_fn([bc_view], dict_key=dict_key)
+        return MultiviewBatchedVideoDatapoint(*view_batchvideo)
+    elif len(batch[0]) == 3:  # Multiview with depth images
+        view_batchvideo = [None, None, None, batch[0][1], batch[0][2][0], batch[0][2][1], batch[0][2][2]]
+        for idx, bc_view in enumerate(batch[0][0]):
+            view_batchvideo[idx] = collate_fn([bc_view], dict_key=dict_key)
+        return MultiviewBatchedVideoDatapoint(*view_batchvideo)
 
 def collate_fn_test(
     batch: List[VideoDatapoint],
