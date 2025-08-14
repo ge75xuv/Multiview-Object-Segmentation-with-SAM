@@ -95,7 +95,10 @@ def load_state_dict_into_model(
     # Ignore check_load_state_dict_errors
     missing_keys = [k for k in missing_keys if not (k.startswith("sam_mask_decoder") or
                                                   k.startswith("multi_object_memory") or  # Custom multi-object memory
-                                                  k.startswith("multi_object_epi"))  # Custom multi-object epipolar
+                                                  k.startswith("multi_object_epi") or  # Custom multi-object epipolar
+                                                  k.startswith("view_spatial_prior") or  # Custom view spatial prior
+                                                  k.startswith("reliability_and_bias") or  # Custom reliability and bias
+                                                  k.startswith("source_target_reliability"))  # Custom source target
                     ]
 
     # Parts that do not belong to the model anymore

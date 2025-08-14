@@ -36,6 +36,9 @@ class SAM2FormerTrain(SAM2FormerBase):
         epipolar_attention=None,
         query_epipolar_fusion=None,
         flag_epipolar_attn_bias=False,
+        source_target_reliability=None,
+        view_spatial_prior=None,
+        reliability_and_bias=None,
         prob_to_use_pt_input_for_train=0.0,
         prob_to_use_pt_input_for_eval=0.0,
         prob_to_use_box_input_for_train=0.0,
@@ -90,32 +93,32 @@ class SAM2FormerTrain(SAM2FormerBase):
         self.forward_backbone_per_frame_for_eval = forward_backbone_per_frame_for_eval
 
         # Point sampler and conditioning frames
-        self.prob_to_use_pt_input_for_train = prob_to_use_pt_input_for_train
-        self.prob_to_use_box_input_for_train = prob_to_use_box_input_for_train
-        self.prob_to_use_pt_input_for_eval = prob_to_use_pt_input_for_eval
-        self.prob_to_use_box_input_for_eval = prob_to_use_box_input_for_eval
-        if prob_to_use_pt_input_for_train > 0 or prob_to_use_pt_input_for_eval > 0:
-            logging.info(
-                f"Training with points (sampled from masks) as inputs with p={prob_to_use_pt_input_for_train}"
-            )
-            assert num_frames_to_correct_for_train >= num_init_cond_frames_for_train
-            assert num_frames_to_correct_for_eval >= num_init_cond_frames_for_eval
+        # self.prob_to_use_pt_input_for_train = prob_to_use_pt_input_for_train
+        # self.prob_to_use_box_input_for_train = prob_to_use_box_input_for_train
+        # self.prob_to_use_pt_input_for_eval = prob_to_use_pt_input_for_eval
+        # self.prob_to_use_box_input_for_eval = prob_to_use_box_input_for_eval
+        # if prob_to_use_pt_input_for_train > 0 or prob_to_use_pt_input_for_eval > 0:
+        #     logging.info(
+        #         f"Training with points (sampled from masks) as inputs with p={prob_to_use_pt_input_for_train}"
+        #     )
+        #     assert num_frames_to_correct_for_train >= num_init_cond_frames_for_train
+        #     assert num_frames_to_correct_for_eval >= num_init_cond_frames_for_eval
 
-        self.num_frames_to_correct_for_train = num_frames_to_correct_for_train
-        self.num_frames_to_correct_for_eval = num_frames_to_correct_for_eval
-        self.rand_frames_to_correct_for_train = rand_frames_to_correct_for_train
-        self.rand_frames_to_correct_for_eval = rand_frames_to_correct_for_eval
-        # Initial multi-conditioning frames
-        self.num_init_cond_frames_for_train = num_init_cond_frames_for_train
-        self.num_init_cond_frames_for_eval = num_init_cond_frames_for_eval
-        self.rand_init_cond_frames_for_train = rand_init_cond_frames_for_train
-        self.rand_init_cond_frames_for_eval = rand_init_cond_frames_for_eval
-        self.add_all_frames_to_correct_as_cond = add_all_frames_to_correct_as_cond
-        self.num_correction_pt_per_frame = num_correction_pt_per_frame
-        self.pt_sampling_for_eval = pt_sampling_for_eval
-        self.prob_to_sample_from_gt_for_train = prob_to_sample_from_gt_for_train
-        # A random number generator with a fixed initial seed across GPUs
-        self.rng = np.random.default_rng(seed=42)
+        # self.num_frames_to_correct_for_train = num_frames_to_correct_for_train
+        # self.num_frames_to_correct_for_eval = num_frames_to_correct_for_eval
+        # self.rand_frames_to_correct_for_train = rand_frames_to_correct_for_train
+        # self.rand_frames_to_correct_for_eval = rand_frames_to_correct_for_eval
+        # # Initial multi-conditioning frames
+        # self.num_init_cond_frames_for_train = num_init_cond_frames_for_train
+        # self.num_init_cond_frames_for_eval = num_init_cond_frames_for_eval
+        # self.rand_init_cond_frames_for_train = rand_init_cond_frames_for_train
+        # self.rand_init_cond_frames_for_eval = rand_init_cond_frames_for_eval
+        # self.add_all_frames_to_correct_as_cond = add_all_frames_to_correct_as_cond
+        # self.num_correction_pt_per_frame = num_correction_pt_per_frame
+        # self.pt_sampling_for_eval = pt_sampling_for_eval
+        # self.prob_to_sample_from_gt_for_train = prob_to_sample_from_gt_for_train
+        # # A random number generator with a fixed initial seed across GPUs
+        # self.rng = np.random.default_rng(seed=42)
 
         if freeze_image_encoder:
             # HEADS UP
@@ -127,13 +130,23 @@ class SAM2FormerTrain(SAM2FormerBase):
             for p in self.sam_mask_decoder.parameters():
                 p.requires_grad = False
 
-        if self.multiview and not self.flag_epipolar_attn_bias:
-            self.epipolar_encoder = epipolar_encoder
-        elif self.multiview and self.flag_epipolar_attn_bias:
-            # self.epi_weights_alpha = torch.nn.Parameter(torch.ones(self.num_queries)) * 2
-            # self.epi_weights_view = torch.nn.Parameter(torch.ones(3)) * 2
-            self.epipolar_encoder = None
-            del epipolar_encoder  # avoid unused argument warning
+        # Check multiview condition
+        assert (self.multiview or not self.flag_epipolar_attn_bias),(
+            "Invalid configuration: `flag_epipolar_attn_bias` can only be True if `multiview` is also True.")
+
+        if self.multiview:
+            # Source-Target Pair Reliability
+            self.source_target_reliability = source_target_reliability
+            # ViewSpatialPrior
+            self.view_spatial_prior = view_spatial_prior
+            # ReliabilityAndBias
+            self.reliability_and_bias = reliability_and_bias
+            # Store the epipolar encoder or not
+            if not self.flag_epipolar_attn_bias:
+                self.epipolar_encoder = epipolar_encoder
+            else:
+                self.epipolar_encoder = None
+                del epipolar_encoder  # avoid unused argument warning
         else:
             self.epipolar_encoder = None
             del epipolar_encoder  # avoid unused argument warning
@@ -288,6 +301,7 @@ class SAM2FormerTrain(SAM2FormerBase):
                     ) = self._prepare_backbone_features_per_frame(
                         input.flat_img_batch, img_ids
                     )
+                #TODO Inject the Film Layer here, we need the view idx
 
                 # Get output masks based on this frame's prompts and previous memory
                 current_out = self.track_step(
@@ -316,6 +330,13 @@ class SAM2FormerTrain(SAM2FormerBase):
                     last_vision_feat = current_vision_feats[-1].detach().clone()  #NOTE NOT SURE IF DETACH
                     feature_container_for_multiview_fusion[view_idx] = last_vision_feat.permute(1, 2, 0).view(B, D, H, W)
             # end view loop
+            debug = False
+            if debug:
+                import pdb; pdb.set_trace()
+                from custom_models.debugging.visualizer import (visualize_multiview_images, 
+                                                visualize_epipolar_mask, 
+                                                visualize_predicted_masks_with_labels)
+                # visualize_multiview_images(view_inputs[0].img_batch[0], view_inputs[1].img_batch[0], view_inputs[2].img_batch[0])
             # Fuse the epipolar lines
             if self.multiview:
                 pred0 = output_dict[0]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[0]["non_cond_frame_outputs"][stage_id]
@@ -329,8 +350,18 @@ class SAM2FormerTrain(SAM2FormerBase):
                                                                  self.sam_mask_decoder.predictor.num_queries,
                                                                  depth_images=stage_depth_images)
                 epipolar_masks = epipolar_masks.to(self.device)
+                # SourceTargetReliability
+                src_tgt_rel = self.source_target_reliability([0,1,2], [0,1,2])
+                # ViewSpatialPrior
+                view_spatial_prior = self.view_spatial_prior([0,1,2], *epipolar_masks.shape[-2:])
+                # ReliabilityAndBias
+                for re_view_idx in range(3):
+                    r, bias = self.reliability_and_bias(pred0['pred_masks_high_res'].squeeze(0), 
+                                                               epipolar_masks[:, re_view_idx], 
+                                                               stage_depth_images[re_view_idx], 
+                                                               view_spatial_prior[re_view_idx])
                 # Scale the epipolar masks and add bias (Use the same scale and bias as in the memory encoder)
-                epipolar_masks = epipolar_masks.sigmoid() * self.sigmoid_scale_for_mem_enc + self.sigmoid_bias_for_mem_enc
+                # epipolar_masks = epipolar_masks.sigmoid() * self.sigmoid_scale_for_mem_enc + self.sigmoid_bias_for_mem_enc
                 pix_feat = torch.vstack(list(feature_container_for_multiview_fusion.values()))
                 # NOTE pix_feats = (3, 256, 16, 16), epipolar_masks = (O, 3, H, W)
                 # NOTE pix_feat_for_mem = (1, 256, 16, 16) mask_for_mem = (23, 1, 256, 256)

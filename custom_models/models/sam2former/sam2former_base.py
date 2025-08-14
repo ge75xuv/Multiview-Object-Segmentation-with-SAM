@@ -204,7 +204,7 @@ class SAM2FormerBase(torch.nn.Module):
         self.flag_epipolar_attn_bias = flag_epipolar_attn_bias
         if self.multiview and not flag_epipolar_attn_bias:
             self.epipolar_attention = epipolar_attention
-            # Epipolar projection for multiobject
+            # Epipolar projection for multiobject  #TODO just use one projection
             self.multi_object_epi_proj = query_epipolar_fusion
             # A single token to indicate no memory embedding from previous frames
             self.no_epipolar_embed = torch.nn.Parameter(torch.zeros(1, 1, self.hidden_dim))

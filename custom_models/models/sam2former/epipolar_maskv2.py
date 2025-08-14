@@ -9,7 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 import torch
 
 from helpers.configurations import OBJECTS_EPIPOLAR, LABEL_PROJECTION_MAP, OBJECTS_DEPTH_PROJ
-from custom_models.models.sam2former.point_cloud_mask import depth_preprocess, point_cloud_main
+from custom_models.models.sam2former.point_cloud_mask import point_cloud_mask
 
 VIEW_COMBINATIONS = {
     0: ["epi_lines_1_to_0", "epi_lines_2_to_0"],
@@ -142,12 +142,14 @@ def epipolar_mask_preprocess(
 def epipolar_mask_post_process(
     epi_masks_for_views: Dict[int, Tuple[torch.Tensor, float]],
     _size: Tuple[int, int],
-    epipolar_weight: float = 0.5,
+    epipolar_weight: List[float],
     device: Optional[str] = 'cpu'
 ):
-    mask = torch.zeros([3, _size[0], _size[1]], dtype=torch.float32, device=device)
+    mask = torch.zeros([3, 2, _size[0], _size[1]], dtype=torch.float32, device=device)
     # epi_masks keys for views and values are the intersection points from 2 other views
     for view_id in range(3):
+        other_views = [v for v in range(3) if v != view_id]        # e.g. if view=0 → [1,2]
+        weights = [epipolar_weight[v] for v in other_views]
         for i in range(2):  # two sets of epipolar intersections
             coords = epi_masks_for_views[view_id][i]  # [N, 2]
             if coords.numel() == 0:
@@ -155,7 +157,7 @@ def epipolar_mask_post_process(
 
             coords_rounded = coords.floor().long()
             x, y = coords_rounded[:, 0], coords_rounded[:, 1]
-            mask[view_id, y, x] += epipolar_weight
+            mask[view_id, i, y, x] += weights[i]  # Add the weight to the mask
 
     return mask
 
@@ -212,46 +214,49 @@ def epipolar_mask(
 
         # If both lines exist, compute the intersection
         elif _check_first == True and _check_second == True:
-            # intersect_point1 = single_epiline(_size, _first_epi_lines, step)
-            # intersect_point2 = single_epiline(_size, _second_epi_lines, step)
-            # epi_masks_for_views[view] = intersect_point1, intersect_point2
+            intersect_point1 = single_epiline(_size, _first_epi_lines, step)
+            intersect_point2 = single_epiline(_size, _second_epi_lines, step)
+            epi_masks_for_views[view] = intersect_point1, intersect_point2
 
-            # Vectorized intersection computation
-            start_time = time.time()
-            skip = 1
-            a, b, c = _first_epi_lines.T[:, ::skip]  # Shape: [N]
-            k, l, m = _second_epi_lines.T[:, ::skip]  # Shape: [M]
+            if False:
+                # Vectorized intersection computation
+                start_time = time.time()
+                skip = 1
+                a, b, c = _first_epi_lines.T[:, ::skip]  # Shape: [N]
+                k, l, m = _second_epi_lines.T[:, ::skip]  # Shape: [M]
 
-            # Expand dimensions for broadcasting: a,b,c -> [N,1], k,l,m -> [1,M]
-            a = a[:, None]  # [N, 1]
-            b = b[:, None]  # [N, 1] 
-            c = c[:, None]  # [N, 1]
-            k = k[None, :]  # [1, M]
-            l = l[None, :]  # [1, M]
-            m = m[None, :]  # [1, M]
-
-            # Calculate the intersection point, every line to all lines
-            intersect_point = intersection_vectorized(a, b, c, k, l, m)
-            print(f"Time taken for the intersection_vectorized for view {view}: {time.time() - start_time:.4f} seconds")
-            # start_time = time.time()
-            # # Remove duplicates
-            # intersect_point = torch.unique(intersect_point, dim=0)
-            # print(f"Time taken for the torch.unique for view {view}: {time.time() - start_time:.4f} seconds")
-            start_time = time.time()
-            # Remove points outside the image bounds
-            intersect_point = intersect_point[(intersect_point[:, 0] >= 0) & (intersect_point[:, 0] < _size[1]) &
-                                              (intersect_point[:, 1] >= 0) & (intersect_point[:, 1] < _size[0])]
-            print(f"Time taken for masking for view {view}: {time.time() - start_time:.4f} seconds")
-            # Add the intersection points to the view
-            epi_masks_for_views[view] = intersect_point, torch.tensor([[]])  # No second intersection points needed (Put a scalar)
+                # Expand dimensions for broadcasting: a,b,c -> [N,1], k,l,m -> [1,M]
+                a = a[:, None]  # [N, 1]
+                b = b[:, None]  # [N, 1] 
+                c = c[:, None]  # [N, 1]
+                k = k[None, :]  # [1, M]
+                l = l[None, :]  # [1, M]
+                m = m[None, :]  # [1, M]
+                # Calculate the intersection point, every line to all lines
+                intersect_point = intersection_vectorized(a, b, c, k, l, m)
+                # Remove points outside the image bounds
+                intersect_point = intersect_point[(intersect_point[:, 0] >= 0) & (intersect_point[:, 0] < _size[1]) &
+                                                (intersect_point[:, 1] >= 0) & (intersect_point[:, 1] < _size[0])]
+                # Add the intersection points to the view
+                epi_masks_for_views[view] = intersect_point, torch.tensor([[]])  # No second intersection points needed (Put a scalar)
 
         # If only one line exists, sample along the epipolar line
-        else:
+        elif _check_first == True and _check_second == False:
             intersect_point = single_epiline(_size, 
                            _first_epi_lines if _first_epi_lines is not None else _second_epi_lines,
                            step=1
                         )
             epi_masks_for_views[view] = intersect_point, torch.tensor([[]])
+
+        # If only one line exists, sample along the epipolar line
+        elif _check_first == False and _check_second == True:
+            intersect_point = single_epiline(_size, 
+                           _first_epi_lines if _first_epi_lines is not None else _second_epi_lines,
+                           step=1
+                        )
+            epi_masks_for_views[view] = torch.tensor([[]]), intersect_point
+        else:
+            raise RuntimeError("Unexpected case")
     return epi_masks_for_views
 
 @torch.no_grad()
@@ -260,23 +265,26 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
                   predictions1: Dict[str, torch.Tensor],
                   predictions2: Dict[str, torch.Tensor],
                   num_queries: int = 23,
-                  epipolar_weight: float = 0.5,
                   n_points: Optional[int] = 4096,
                   step: Optional[int] = 2,
                   depth_images=None,
                   ):
     """Wrap the epipolar functionality to be used in the training class."""
     # Get the logits from each camera's predictions.
-    pred_class0 = torch.Tensor(predictions0['pred_logits']).softmax(dim=-1).argmax(dim=-1)
-    pred_class1 = torch.Tensor(predictions1['pred_logits']).softmax(dim=-1).argmax(dim=-1)
-    pred_class2 = torch.Tensor(predictions2['pred_logits']).softmax(dim=-1).argmax(dim=-1)
+    pred_logits0 = torch.Tensor(predictions0['pred_logits']).softmax(dim=-1)
+    pred_logits1 = torch.Tensor(predictions1['pred_logits']).softmax(dim=-1)
+    pred_logits2 = torch.Tensor(predictions2['pred_logits']).softmax(dim=-1)
+    # Class
+    pred_class0 = pred_logits0.argmax(dim=-1)
+    pred_class1 = pred_logits1.argmax(dim=-1)
+    pred_class2 = pred_logits2.argmax(dim=-1)
 
     # Initialize the masks
     device = pred_class0.device
     o, h, w = predictions0['pred_masks_high_res'].shape[-3:]
     unique_projected_labels = set([obj['label'] for obj in LABEL_PROJECTION_MAP['default'].values()])
     # unique_projected_labels = [i for i in range(num_queries)]  # TODO: get it from the config num_classes
-    masks = torch.zeros([len(unique_projected_labels), 3, h, w], dtype=torch.float32, device=device)
+    masks = torch.zeros([len(unique_projected_labels), 3, 2, h, w], dtype=torch.float32, device=device)
 
     # Send camera matrices to cuda
     camera_int_ext = [(cam_mtrcs[0].to(device), cam_mtrcs[1].to(device)) for cam_mtrcs in camera_int_ext]
@@ -303,7 +311,7 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
         epi_object = obj_idx in OBJECTS_EPIPOLAR
         depth_object = obj_idx in OBJECTS_DEPTH_PROJ
         if not epi_object and not depth_object:
-            masks[obj_idx] = torch.zeros([3, h, w], dtype=torch.float32)
+            masks[obj_idx] = torch.zeros([3, 2, h, w], dtype=torch.float32)
             continue
 
         # Get the masks for the first three cameras
@@ -317,18 +325,23 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
         # Technically we dont need to check if the points are None, since the epipolar mask function will handle it
         # But we do it here to avoid unnecessary computation if the points are not available
         if pts_cam0 is None and pts_cam1 is None and pts_cam2 is None:
-            masks[obj_idx] = torch.zeros([3, h, w], dtype=torch.float32)
+            masks[obj_idx] = torch.zeros([3, 2, h, w], dtype=torch.float32)
             continue
 
         if depth_object:
             # Point cloud projection wrapper
-            point_cloud_main(camera_int_ext, pts_cam0, pts_cam1, pts_cam2, depth_images, mask_cam0.shape[-2:])
+            epi_mask_for_views = point_cloud_mask(camera_int_ext, pts_cam0, pts_cam1, pts_cam2, depth_images, mask_cam0.shape[-2:])
         else:
             # Run the epipolar mask function
             epi_mask_for_views = epipolar_mask(camera_int_ext, pts_cam0, pts_cam1, pts_cam2, mask_cam0.shape[-2:], step=step)
 
+        # Find the prob of that object
+        prob_obj0 = pred_logits0[pos_obj0].max()
+        prob_obj1 = pred_logits1[pos_obj1].max()
+        prob_obj2 = pred_logits2[pos_obj2].max()
+
         # Epipolar mask post processing
-        mask = epipolar_mask_post_process(epi_mask_for_views, mask_cam0.shape[-2:], epipolar_weight, device)
+        mask = epipolar_mask_post_process(epi_mask_for_views, mask_cam0.shape[-2:], [prob_obj0, prob_obj1, prob_obj2], device)
         masks[obj_idx] = mask
     return masks, object_pos_label
 

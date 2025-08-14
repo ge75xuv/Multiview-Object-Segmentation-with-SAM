@@ -31,13 +31,13 @@ def reprojection_to_image_frame(K, T, obj_pc, H, W):
     normalized_pts = projected_pts / projected_pts[2, :]
     # Pixel coordinates
     pixel_pts = normalized_pts[:2, :]  # 2xN
-    pixel_pts = pixel_pts.round().astype(int)  # Round to nearest integer for pixel coordinates
+    pixel_pts = pixel_pts.round().long()  # Round to nearest integer for pixel coordinates
     # Refinement
     refinement = (pixel_pts[1] > (H-1)) | (pixel_pts[1] < 0) | (pixel_pts[0] > (W-1)) | (pixel_pts[0] < 0)
     pixel_pts[:, refinement] = 0  # Set invalid pixel coordinates to 0
     return pixel_pts
 
-def point_cloud_main(cam_int_ext, pts_cam0, pts_cam1, pts_cam2, gt_depth_image, img_size):
+def point_cloud_mask(cam_int_ext, pts_cam0, pts_cam1, pts_cam2, gt_depth_image, img_size):
     # Store Intrinsics and extrinsics
     K0, K1, K2 = cam_int_ext[0][0], cam_int_ext[1][0], cam_int_ext[2][0]
     T0, T1, T2 = cam_int_ext[0][1], cam_int_ext[1][1], cam_int_ext[2][1]  # Transformations are from camera to world coordinates
@@ -51,7 +51,7 @@ def point_cloud_main(cam_int_ext, pts_cam0, pts_cam1, pts_cam2, gt_depth_image, 
     # Compute the depth values of the points in the mask
     H_depth, W_depth = gt_depth_image[0].shape[-2:]  # Assuming all depth images have the same shape
     padding = (W_depth-H_depth) // 2
-    depth_trunc = 10  # 10 meters max
+    depth_trunc = 10 # 10 meters max
 
     # Calculate the backprojection to 3D world frame
     if pts_cam0 is not None:
@@ -64,21 +64,22 @@ def point_cloud_main(cam_int_ext, pts_cam0, pts_cam1, pts_cam2, gt_depth_image, 
         mask2_depth = depth_preprocess(pts_cam2, gt_depth_image[2], padding, depth_trunc, img_size, device)
         obj_pc2 = backproject_to_world(pts_cam2, K2, T2, mask2_depth)
 
-    # Overall point cloud
-    obj_pc12 = torch.concatenate([obj_pc1, obj_pc2], axis=1)
-    obj_pc02 = torch.concatenate([obj_pc0, obj_pc2], axis=1)
-    obj_pc01 = torch.concatenate([obj_pc0, obj_pc1], axis=1)
-
     # Reprojection to the image frame
     H, W = img_size
-    pixel_pts0 = reprojection_to_image_frame(K0, T0, obj_pc12, H, W) if obj_pc12.shape[1] > 0 else None
-    pixel_pts1 = reprojection_to_image_frame(K1, T1, obj_pc02, H, W) if obj_pc02.shape[1] > 0 else None
-    pixel_pts2 = reprojection_to_image_frame(K2, T2, obj_pc01, H, W) if obj_pc01.shape[1] > 0 else None
+    # To 0
+    pixel_pts0_1 = reprojection_to_image_frame(K0, T0, obj_pc1, H, W) if obj_pc1.shape[1] > 0 else torch.tensor([[]])
+    pixel_pts0_2 = reprojection_to_image_frame(K0, T0, obj_pc2, H, W) if obj_pc2.shape[1] > 0 else torch.tensor([[]])
+    # To 1
+    pixel_pts1_0 = reprojection_to_image_frame(K1, T1, obj_pc0, H, W) if obj_pc0.shape[1] > 0 else torch.tensor([[]])
+    pixel_pts1_2 = reprojection_to_image_frame(K1, T1, obj_pc2, H, W) if obj_pc2.shape[1] > 0 else torch.tensor([[]])
+    # To 2
+    pixel_pts2_0 = reprojection_to_image_frame(K2, T2, obj_pc0, H, W) if obj_pc0.shape[1] > 0 else torch.tensor([[]])
+    pixel_pts2_1 = reprojection_to_image_frame(K2, T2, obj_pc1, H, W) if obj_pc1.shape[1] > 0 else torch.tensor([[]])
 
     pc_masks_for_views = {
-        0: (pixel_pts0, torch.tensor([[]])),
-        1: (pixel_pts1, torch.tensor([[]])),
-        2: (pixel_pts2, torch.tensor([[]])),
+        0: (pixel_pts0_1, pixel_pts0_2),
+        1: (pixel_pts1_0, pixel_pts1_2),
+        2: (pixel_pts2_0, pixel_pts2_1),
     }
 
     return pc_masks_for_views

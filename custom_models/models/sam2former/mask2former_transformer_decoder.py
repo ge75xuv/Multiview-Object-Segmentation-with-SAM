@@ -241,6 +241,7 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
         pre_norm: bool,
         mask_dim: int,
         enforce_input_project: bool,
+        old_dec_layers: bool=True
     ):
         """
         NOTE: this interface is experimental.
@@ -264,13 +265,16 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
         assert mask_classification, "Only support mask classification model"
         self.mask_classification = mask_classification
 
+        # Backward compatibility of a bug in the code
+        self.old_dec_layers = old_dec_layers
+
         # positional encoding
         N_steps = hidden_dim // 2
         self.pe_layer = PositionEmbeddingSine(N_steps, normalize=True)
         
         # define Transformer decoder here
         self.num_heads = nheads
-        self.num_layers = dec_layers
+        self.num_layers = dec_layers  # It has to be -1
         self.transformer_self_attention_layers = nn.ModuleList()
         self.transformer_cross_attention_layers = nn.ModuleList()
         self.transformer_ffn_layers = nn.ModuleList()
@@ -389,6 +393,8 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
         predictions_mask.append(outputs_mask)
 
         for i in range(self.num_layers):
+            if i == self.num_layers - 1 and not self.old_dec_layers:
+                continue
             level_index = i % self.num_feature_levels
             attn_mask[torch.where(attn_mask.sum(-1) == attn_mask.shape[-1])] = False
             # attention: cross-attention first
@@ -419,7 +425,10 @@ class MultiScaleMaskedTransformerDecoder(nn.Module):
             predictions_class.append(outputs_class)
             predictions_mask.append(outputs_mask)
 
-        assert len(predictions_class) == self.num_layers + 1
+        if self.old_dec_layers:
+            assert len(predictions_class) == self.num_layers + 1
+        else:
+            assert len(predictions_class) == self.num_layers
 
         out = {
             'pred_logits': predictions_class[-1],
