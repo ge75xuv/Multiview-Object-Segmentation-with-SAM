@@ -213,8 +213,8 @@ class SAM2FormerBase(torch.nn.Module):
             self.no_epipolar_embed_proj = torch.nn.Linear(self.hidden_dim, self.mem_dim)
             trunc_normal_(self.no_epipolar_embed_proj.weight, std=0.02)
         elif self.multiview and flag_epipolar_attn_bias:
-            self.epi_weights_alpha = torch.nn.Parameter(torch.ones(self.num_queries)) * 2
-            self.epi_weights_view = torch.nn.Parameter(torch.ones(3)) * 2
+            # self.epi_weights_alpha = torch.nn.Parameter(torch.ones(self.num_queries)) * 2
+            # self.epi_weights_view = torch.nn.Parameter(torch.ones(3)) * 2
             self.epipolar_attention = None
             del epipolar_attention  # avoid unused argument warning
         else:
@@ -472,7 +472,7 @@ class SAM2FormerBase(torch.nn.Module):
             return None
         assert epipolar_dict is not None, "Epipolar dictionary should not be None."
         # Get the masks for the epipolar attention bias
-        epipolar_masks = epipolar_dict["epipolar_masks"].unsqueeze(1)  # [q, 1, H, W]
+        epipolar_masks = epipolar_dict["pseudo_masks"].unsqueeze(1)  # [q, 1, H, W]
         # Get the query positions
         object_pos_label = epipolar_dict['object_positions_labels']
         ordered_obj_label = list(object_pos_label.values())
@@ -483,9 +483,9 @@ class SAM2FormerBase(torch.nn.Module):
         downsampled_epi_masks1 = F.interpolate(epipolar_masks, size=(32, 32), mode='bilinear', align_corners=False).squeeze(1)
         downsampled_epi_masks2 = F.interpolate(epipolar_masks, size=(64, 64), mode='bilinear', align_corners=False).squeeze(1)
         # Flatten and mutliply with the alpha [Q, H'W']
-        downsampled_epi_masks0 = downsampled_epi_masks0.flatten(1) * self.epi_weights_alpha[:,None]
-        downsampled_epi_masks1 = downsampled_epi_masks1.flatten(1) * self.epi_weights_alpha[:,None]
-        downsampled_epi_masks2 = downsampled_epi_masks2.flatten(1) * self.epi_weights_alpha[:,None]
+        downsampled_epi_masks0 = downsampled_epi_masks0.flatten(1)  # * self.epi_weights_alpha[:,None]
+        downsampled_epi_masks1 = downsampled_epi_masks1.flatten(1)  # * self.epi_weights_alpha[:,None]
+        downsampled_epi_masks2 = downsampled_epi_masks2.flatten(1)  # * self.epi_weights_alpha[:,None]
         return [
             downsampled_epi_masks0,
             downsampled_epi_masks1,

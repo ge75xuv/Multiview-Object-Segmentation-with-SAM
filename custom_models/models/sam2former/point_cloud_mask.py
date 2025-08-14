@@ -1,12 +1,17 @@
 import torch
 
+def apply_padding_on_depth(gt_depth_image_view:torch.Tensor, padding:int, img_size:tuple, device:torch.device):
+    H, W = img_size
+    mask_depth = torch.zeros([H, W], dtype=float, device=device)
+    mask_depth[padding:-padding] = gt_depth_image_view.squeeze(0)
+    return mask_depth
+
 def depth_preprocess(pts_cam:torch.Tensor, gt_depth_image_view:torch.Tensor, padding:int, depth_trunc:int, img_size:tuple, device:torch.device):
     # Get individual x, y, coordinates
     x_, y_ = pts_cam.T  # Put it first into 2xN
     # Create depth masks for each camera
-    H, W = img_size
-    mask_depth = torch.zeros([H, W], dtype=float, device=device)
-    mask_depth[padding:-padding] = gt_depth_image_view.squeeze(0)
+    if padding != 0:
+        mask_depth = apply_padding_on_depth(gt_depth_image_view, padding, img_size, device)
     mask_depth = mask_depth[y_, x_] / 1000.0  # Convert mm to m
     # Truncate
     mask_depth[mask_depth > depth_trunc] = depth_trunc
@@ -50,6 +55,7 @@ def point_cloud_mask(cam_int_ext, pts_cam0, pts_cam1, pts_cam2, gt_depth_image, 
 
     # Compute the depth values of the points in the mask
     H_depth, W_depth = gt_depth_image[0].shape[-2:]  # Assuming all depth images have the same shape
+    assert img_size[1] == W_depth, "Image size width must match depth image width"
     padding = (W_depth-H_depth) // 2
     depth_trunc = 10 # 10 meters max
 

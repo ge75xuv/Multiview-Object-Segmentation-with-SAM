@@ -6,6 +6,7 @@
 
 import logging
 import time
+from contextlib import nullcontext
 
 import numpy as np
 import torch
@@ -303,19 +304,21 @@ class SAM2FormerTrain(SAM2FormerBase):
                     )
                 #TODO Inject the Film Layer here, we need the view idx
 
-                # Get output masks based on this frame's prompts and previous memory
-                current_out = self.track_step(
-                    frame_idx=stage_id,
-                    is_init_cond_frame=stage_id in init_cond_frames,
-                    is_refinement=False,
-                    current_vision_feats=current_vision_feats,
-                    current_vision_pos_embeds=current_vision_pos_embeds,
-                    feat_sizes=feat_sizes,
-                    output_dict=output_dict[view_idx],
-                    encoded_epipolar_dict = encoded_epipolar_dict[view_idx] if self.multiview else None,
-                    num_frames=num_frames,
-                    run_mem_encoder=True if num_frames > 1 else False,
-                )
+                # Get output masks based on this frame's prompts and previous memory. Depending on the last decoding or not, apply the appropriate context.
+                ctx = torch.no_grad() if self.multiview else nullcontext()
+                with ctx:
+                    current_out = self.track_step(
+                            frame_idx=stage_id,
+                            is_init_cond_frame=stage_id in init_cond_frames,
+                            is_refinement=False,
+                            current_vision_feats=current_vision_feats,
+                            current_vision_pos_embeds=current_vision_pos_embeds,
+                            feat_sizes=feat_sizes,
+                            output_dict=output_dict[view_idx],
+                            encoded_epipolar_dict = encoded_epipolar_dict[view_idx] if self.multiview else None,
+                            num_frames=num_frames,
+                            run_mem_encoder=True if num_frames > 1 else False,
+                        )
 
                 add_output_as_cond_frame = stage_id in init_cond_frames
                 if add_output_as_cond_frame:
@@ -327,15 +330,15 @@ class SAM2FormerTrain(SAM2FormerBase):
                 if self.multiview:
                     HW, B, D = current_vision_feats[-1].shape
                     H = W = torch.sqrt(torch.tensor(HW)).int()
-                    last_vision_feat = current_vision_feats[-1].detach().clone()  #NOTE NOT SURE IF DETACH
+                    last_vision_feat = current_vision_feats[-1]  #NOTE NOT SURE IF DETACH
                     feature_container_for_multiview_fusion[view_idx] = last_vision_feat.permute(1, 2, 0).view(B, D, H, W)
             # end view loop
-            debug = False
-            if debug:
-                import pdb; pdb.set_trace()
-                from custom_models.debugging.visualizer import (visualize_multiview_images, 
-                                                visualize_epipolar_mask, 
-                                                visualize_predicted_masks_with_labels)
+            # debug = False
+            # if debug:
+            #     import pdb; pdb.set_trace()
+            #     from custom_models.debugging.visualizer import (visualize_multiview_images, 
+            #                                     visualize_epipolar_mask, 
+            #                                     visualize_predicted_masks_with_labels)
                 # visualize_multiview_images(view_inputs[0].img_batch[0], view_inputs[1].img_batch[0], view_inputs[2].img_batch[0])
             # Fuse the epipolar lines
             if self.multiview:
@@ -351,31 +354,35 @@ class SAM2FormerTrain(SAM2FormerBase):
                                                                  depth_images=stage_depth_images)
                 epipolar_masks = epipolar_masks.to(self.device)
                 # SourceTargetReliability
-                src_tgt_rel = self.source_target_reliability([0,1,2], [0,1,2])
+                epipolar_masks = self.source_target_reliability(epipolar_masks)
                 # ViewSpatialPrior
                 view_spatial_prior = self.view_spatial_prior([0,1,2], *epipolar_masks.shape[-2:])
                 # ReliabilityAndBias
+                bias_list = []
                 for re_view_idx in range(3):
-                    r, bias = self.reliability_and_bias(pred0['pred_masks_high_res'].squeeze(0), 
+                    view_evaluation = eval(f'pred{re_view_idx}')  # Get the correct view prediction
+                    r, bias = self.reliability_and_bias(view_evaluation['pred_masks_high_res'].squeeze(0), 
                                                                epipolar_masks[:, re_view_idx], 
                                                                stage_depth_images[re_view_idx], 
                                                                view_spatial_prior[re_view_idx])
+                    bias_list.append(bias)
+                pseudo_masks = torch.concatenate(bias_list, dim=1)  # (B, 3, H, W)
                 # Scale the epipolar masks and add bias (Use the same scale and bias as in the memory encoder)
-                # epipolar_masks = epipolar_masks.sigmoid() * self.sigmoid_scale_for_mem_enc + self.sigmoid_bias_for_mem_enc
+                # pseudo_masks = pseudo_masks.sigmoid() * self.sigmoid_scale_for_mem_enc + self.sigmoid_bias_for_mem_enc
                 pix_feat = torch.vstack(list(feature_container_for_multiview_fusion.values()))
-                # NOTE pix_feats = (3, 256, 16, 16), epipolar_masks = (O, 3, H, W)
+                # NOTE pix_feats = (3, 256, 16, 16), pseudo_masks = (O, 3, H, W)
                 # NOTE pix_feat_for_mem = (1, 256, 16, 16) mask_for_mem = (23, 1, 256, 256)
 
                 if not self.flag_epipolar_attn_bias:
                     # Encode the epipolar features
                     for view_idx in range(3):
-                        encoded_epipolars = self.epipolar_encoder(pix_feat[view_idx:view_idx+1], epipolar_masks[:,view_idx:view_idx+1])
+                        encoded_epipolars = self.epipolar_encoder(pix_feat[view_idx:view_idx+1], pseudo_masks[:,view_idx:view_idx+1])
                         # dictionary with keys "vision_features" and "vision_pos_enc"
                         encoded_epipolars['object_positions_labels'] = object_pos_label[view_idx]
                         encoded_epipolar_dict[view_idx] = encoded_epipolars
                 else:
                     for view_idx in range(3):
-                        encoded_epipolars = {'epipolar_masks': epipolar_masks[:, view_idx]}
+                        encoded_epipolars = {'pseudo_masks': pseudo_masks[:, view_idx]}
                         encoded_epipolars['object_positions_labels'] = object_pos_label[view_idx]
                         encoded_epipolar_dict[view_idx] = encoded_epipolars
 

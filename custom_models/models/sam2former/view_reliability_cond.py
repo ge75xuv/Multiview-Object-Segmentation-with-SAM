@@ -2,16 +2,23 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from custom_models.models.sam2former.point_cloud_mask import apply_padding_on_depth
+
 class SourceTargetReliability(nn.Module):
     def __init__(self, num_views):
         super().__init__()
+        self.num_views = num_views
         self.W = nn.Parameter(torch.zeros(num_views, num_views))  # target x source
-    def forward(self, target_ids, source_ids):
-        # target_ids: [B], source_ids: [B,M]
+
+    def forward(self, epipolar_masks):
+        '''Apply source-target reliability to epipolar masks.
+        epipolar_masks: B, 3, 2, H, W'''
         W = torch.sigmoid(self.W)  # (0,1)
-        # gather per-batch weights
-        w = W[target_ids][:, source_ids]  # [B,M]
-        return w
+        # Apply reliability scores in the corresponding epipolar masks
+        for i in range(self.num_views):
+            other_views = [j for j in range(self.num_views) if j != i]
+            epipolar_masks[:,i] *= W[i, other_views][None, :, None, None]  # Bx2xHxW
+        return epipolar_masks
 
 class ViewSpatialPrior(nn.Module):
     """
@@ -148,7 +155,7 @@ class ReliabilityAndBias(nn.Module):
         self,
         self_logits: torch.Tensor,     # Bx1xHxW
         pseudo_maps: torch.Tensor,     # BxMxHxW
-        depth_mm: torch.Tensor,       # Bx3xHxW
+        depth_mm: torch.Tensor,       # Bx1xHxW
         view_spatial_prior: torch.Tensor,  # Bx1xHxW
         *,
         detach_pseudo: bool = False,   # optionally stop grads through pseudo path early in training
@@ -157,15 +164,21 @@ class ReliabilityAndBias(nn.Module):
         if len(self_logits.shape) == 3:
             self_logits = self_logits.unsqueeze(1)
         B, _, H, W = self_logits.shape
-        depth_mm = torch.randn_like(self_logits)
-        assert depth_mm.shape[-2:] == (H, W), "Depth_mm must match HxW"
+
+        # Depth specific preprocessing
+        H_depth, W_depth = depth_mm.shape[-2:]  # Assuming all depth images have the same shape
+        assert W == W_depth, "Image size width must match depth image width"
+        padding = (W_depth-H_depth) // 2
+        depth_trunc = 10 # 10 meters max
+        depth_mm = apply_padding_on_depth(depth_mm, padding=padding, img_size=(H, W), device=self_logits.device)
+        depth_mm = depth_mm[None, None, :].repeat(B, 1, 1, 1)  # Bx1xHxW
 
         # Check the view prior
         if view_spatial_prior.shape[0] != B:
             view_spatial_prior = view_spatial_prior.unsqueeze(1).repeat(B, 1, 1, 1)
 
         # Normalize depth_mm to [0, 1] per batch (robust to 0..255 or 0..1 inputs)
-        depth_mm_norm, depth_valid, depth_gradmag = self.depth_feats_from_mm(depth_mm)
+        depth_mm_norm, depth_valid, depth_gradmag = self.depth_feats_from_mm(depth_mm, zmax_m=depth_trunc)
 
         # Handle pseudo logits/probabilities
         if detach_pseudo:

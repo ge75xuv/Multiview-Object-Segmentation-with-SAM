@@ -2,7 +2,7 @@
 
 scratch:
   resolution: 256
-  num_sampling_points: 4096  # 1024, 4096
+  num_sampling_points: 1024  # 1024, 4096
   train_batch_size: 1
   num_train_workers: 2
   base_lr: 3.0e-6  # 5.0e-6
@@ -12,7 +12,7 @@ scratch:
   num_frames: 1
   multiview: true
   depth_image: true
-  flag_epipolar_attn_bias: false  # use epipolar attention bias
+  flag_epipolar_attn_bias: true  # use epipolar attention bias
   max_epochs: 70
   # Decoder
   num_queries: 23

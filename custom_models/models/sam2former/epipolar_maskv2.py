@@ -340,6 +340,10 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
         prob_obj1 = pred_logits1[pos_obj1].max()
         prob_obj2 = pred_logits2[pos_obj2].max()
 
+        dbg = [dbg_pts.shape[1] < 2 for dbg_pts_tuple in epi_mask_for_views.values() for dbg_pts in dbg_pts_tuple if dbg_pts.numel() > 0]
+        if torch.any(torch.tensor(dbg, dtype=torch.bool)):
+            print('prob < 2')
+
         # Epipolar mask post processing
         mask = epipolar_mask_post_process(epi_mask_for_views, mask_cam0.shape[-2:], [prob_obj0, prob_obj1, prob_obj2], device)
         masks[obj_idx] = mask
