@@ -235,3 +235,72 @@ class ReliabilityAndBias(nn.Module):
         bias = bias * self.lambda_scale  # final bias to add to attention logits
 
         return r, bias
+
+def consensus_aux_loss(epipolar_masks, view_evaluation, re_view_idx, r, bias, output_dict):
+    # ----------------- CONSENSUS AUX LOSSES (per target view) -----------------
+    # Shapes expected here:
+    #   self_logits:      [B,1,H,W]   (your call passes [*,1,H,W]; if it's [Q,1,H,W], Q acts like B — OK)
+    #   pseudo_maps:      [B,M,H,W]   (M=2 sources for 3 views)
+    #   r, bias:          [B,1,H,W]
+    # If your pseudo are logits (default of your module), we need probabilities for "confidence".
+    pseudo_are_logits = True  # set to False if epipolar_masks are already probs in [0,1]
+    pseudo = epipolar_masks[:, re_view_idx]                  # [B, M, H, W]
+    pseudo_prob = torch.sigmoid(pseudo) if pseudo_are_logits else pseudo.clamp(0, 1)
+
+    # Soft confidence from “how far from 0.5” the sources are; average across M
+    # conf in [0,1]; 0.0=ambiguous, 1.0=confident (either FG or BG)
+    conf = (pseudo_prob - 0.5).abs().mean(dim=1, keepdim=True) * 2.0   # [B,1,H,W]
+    mean_proj = pseudo_prob.mean(dim=1, keepdim=True)                   # [B,1,H,W] soft consensus (prob)
+
+    # Agreement target for r: high when pseudo confident AND agrees with current view
+    # If you want it independent of self_logits, just use conf; this variant also rewards agreement
+    # self_prob = torch.sigmoid(view_evaluation['pred_masks_high_res'].squeeze(0) if
+    #                         view_evaluation['pred_masks_high_res'].ndim==3 else
+    #                         view_evaluation['pred_masks_high_res'])
+    # # Ensure shape [B,1,H,W]
+    # if self_prob.ndim == 3: self_prob = self_prob.unsqueeze(1)
+    self_prob = torch.sigmoid(view_evaluation['pred_masks_high_res']).transpose(0,1)
+
+    agree = 1.0 - (self_prob - mean_proj).abs()     # in [0,1], 1 = perfect agreement
+    r_target = (0.5 * conf + 0.5 * agree).clamp(0,1)  # mix of confidence and agreement
+
+    # Support / null masks based on confidence
+    tau_support = 0.15                                # pixels with conf>0.15 are “supported”
+    support_mask = (conf > tau_support).float()       # [B,1,H,W]
+    null_mask    = (conf <= tau_support).float()
+
+    # (1) Agreement for reliability: r ≈ r_target on supported pixels
+    # Use BCE on probabilities (or L1 if you prefer)
+    with torch.cuda.amp.autocast(enabled=False):
+        L_r_agree = F.binary_cross_entropy(r.float(), r_target.float(), reduction='none')
+    L_r_agree = (L_r_agree * support_mask).sum() / (support_mask.sum().clamp(min=1.0))
+
+    # (2) Neutrality where unsupported: r → 0.5
+    L_r_null = (r - 0.5).abs()
+    L_r_null = (L_r_null * null_mask).sum() / (null_mask.sum().clamp(min=1.0))
+
+    # (3) Quiet bias when unsupported: |bias| small where conf is low
+    L_bias_quiet = bias.abs()
+    L_bias_quiet = (L_bias_quiet * (1.0 - conf)).mean()
+
+    # (4) Tiny TV on r (denoise)
+    def tv_l1(x):
+        dx = x[..., :, 1:] - x[..., :, :-1]
+        dy = x[..., 1:, :] - x[..., :-1, :]
+        return dx.abs().mean() + dy.abs().mean()
+    L_tv = tv_l1(r)
+
+    # Accumulate (define these weights in your cfg)
+    w_agr  = 0.25
+    w_null = 0.05
+    w_quiet= 0.05
+    w_tv   = 0.02
+
+    if 'consensus_losses' not in output_dict:
+        output_dict['consensus_losses'] = {'agr':0.0, 'null':0.0, 'quiet':0.0, 'tv':0.0}
+
+    output_dict['consensus_losses']['agr']  = output_dict['consensus_losses']['agr']  + w_agr  * L_r_agree
+    output_dict['consensus_losses']['null'] = output_dict['consensus_losses']['null'] + w_null * L_r_null
+    output_dict['consensus_losses']['quiet']= output_dict['consensus_losses']['quiet']+ w_quiet* L_bias_quiet
+    output_dict['consensus_losses']['tv']   = output_dict['consensus_losses']['tv']   + w_tv   * L_tv
+    return output_dict

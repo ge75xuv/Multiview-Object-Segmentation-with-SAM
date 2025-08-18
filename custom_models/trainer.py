@@ -487,6 +487,7 @@ class Trainer:
                 })
             # Modify the output
             outputs = outputs[0]  # Outputs are standardized for multiview, just take the first view
+            consensus_aux_loss = None
         else:
             for view_idx in range(3):
                 batch_size = len(batch[view_idx].img_batch)
@@ -505,12 +506,15 @@ class Trainer:
                         "masks": batch[view_idx].masks[xx, yy],
                         "labels": obj_id,
                     })
-            # Modify the outputs shape to match the targets 
-            # outputs = {0: {0:, 1:, 2:}, 1: {0:, 1:, 2:}, 2: {0:, 1:, 2:}} -> {0: , 1:, 2:, ...}
+            consensus_aux_loss = outputs.pop('L_consensus', None)
+            # Modify the outputs shape to match the targets
+            # outputs = {0: {0:, 1:, 2:, ...}, 1: {0:, 1:, 2:, ...}, 2: {0:, 1:, 2:, ...}} -> {0: , 1:, 2:, ...}
             outputs = {view_idx*batch_size + stage_id: outputs[view_idx][stage_id] for view_idx in outputs for stage_id in outputs[view_idx]}
 
         # Calculate the loss
         loss = self.loss[key](outputs, targets)
+        if consensus_aux_loss is not None:
+            loss['core_loss'] += consensus_aux_loss
         loss_str = f"Losses/{phase}_{key}_loss"
 
         # DEBUGGING

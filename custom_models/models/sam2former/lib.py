@@ -202,40 +202,41 @@ def get_world_size() -> int:
 def sample_from_obj_id(target_labels, target_masks, obj_id, point_coords, num_points) -> torch.Tensor:
     '''Check if the object id is in the target if so sample num_points many points 
     from it and concatenate to the point coords, if not do not do anything.'''
-    if obj_id in target_labels:
-        # Get the mask for the object id
-        obj_mask = target_masks[target_labels == obj_id]  # Shape: [H, W] or [1, H, W]
-        # Ensure mask is 3D
-        obj_mask = obj_mask.squeeze(1)
-        # Get the shapes
-        B, H, W = obj_mask.shape
-        # Get the points where the mask is 1
-        mask_pts = torch.where(obj_mask == 1)
-        mask_size = mask_pts[0].numel()
-        if mask_size == 0:
-            return point_coords
-        # Randomly sample num_points from the mask
-        # If the mask size is smaller than num_points, sample all points
-        num_points_to_sample = min(num_points, mask_size)
-        if mask_size > num_points_to_sample:
-            indeces = torch.randperm(mask_size, device=obj_mask.device)[:num_points_to_sample]
-            w_coords = mask_pts[2][indeces]
-            h_coords = mask_pts[1][indeces]
-        else:
-            w_coords = mask_pts[2]
-            h_coords = mask_pts[1]
-        # Normalize the coordinates to [0, 1]
-        w_normalized = (w_coords.float() + 0.5) / (W)
-        h_normalized = (h_coords.float() + 0.5) / (H)
-
-        sampled_points = torch.stack([w_normalized, h_normalized], dim=1)  # [N_sampled, 2]
-
-        # Add batch dimension and concatenate
-        batch_size = point_coords.shape[0]
-        sampled_points = sampled_points.unsqueeze(0).expand(batch_size, -1, -1)
-        
-        point_coords = torch.cat((point_coords, sampled_points), dim=1)
+    if obj_id not in target_labels:
         return point_coords
+    # Get the mask for the object id
+    obj_mask = target_masks[target_labels == obj_id]  # Shape: [H, W] or [1, H, W]
+    # Ensure mask is 3D
+    obj_mask = obj_mask.squeeze(1)
+    # Get the shapes
+    B, H, W = obj_mask.shape
+    # Get the points where the mask is 1
+    mask_pts = torch.where(obj_mask == 1)
+    mask_size = mask_pts[0].numel()
+    if mask_size == 0:
+        return point_coords
+    # Randomly sample num_points from the mask
+    # If the mask size is smaller than num_points, sample all points
+    num_points_to_sample = min(num_points, mask_size)
+    if mask_size > num_points_to_sample:
+        indeces = torch.randperm(mask_size, device=obj_mask.device)[:num_points_to_sample]
+        w_coords = mask_pts[2][indeces]
+        h_coords = mask_pts[1][indeces]
+    else:
+        w_coords = mask_pts[2]
+        h_coords = mask_pts[1]
+    # Normalize the coordinates to [0, 1]
+    w_normalized = (w_coords.float() + 0.5) / (W)
+    h_normalized = (h_coords.float() + 0.5) / (H)
+
+    sampled_points = torch.stack([w_normalized, h_normalized], dim=1)  # [N_sampled, 2]
+
+    # Add batch dimension and concatenate
+    batch_size = point_coords.shape[0]
+    sampled_points = sampled_points.unsqueeze(0).expand(batch_size, -1, -1)
+    
+    point_coords = torch.cat((point_coords, sampled_points), dim=1)
+    return point_coords
 
 def point_sample(input, point_coords, **kwargs):
     """

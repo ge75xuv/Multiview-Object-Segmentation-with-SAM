@@ -24,6 +24,7 @@ from sam2.utils.misc import concat_points
 from training.utils.data_utils import BatchedVideoDatapoint
 
 from custom_models.models.sam2former.epipolar_maskv2 import epipolar_main
+from custom_models.models.sam2former.view_reliability_cond import consensus_aux_loss
 
 class SAM2FormerTrain(SAM2FormerBase):
     def __init__(
@@ -333,13 +334,7 @@ class SAM2FormerTrain(SAM2FormerBase):
                     last_vision_feat = current_vision_feats[-1]  #NOTE NOT SURE IF DETACH
                     feature_container_for_multiview_fusion[view_idx] = last_vision_feat.permute(1, 2, 0).view(B, D, H, W)
             # end view loop
-            # debug = False
-            # if debug:
-            #     import pdb; pdb.set_trace()
-            #     from custom_models.debugging.visualizer import (visualize_multiview_images, 
-            #                                     visualize_epipolar_mask, 
-            #                                     visualize_predicted_masks_with_labels)
-                # visualize_multiview_images(view_inputs[0].img_batch[0], view_inputs[1].img_batch[0], view_inputs[2].img_batch[0])
+
             # Fuse the epipolar lines
             if self.multiview:
                 pred0 = output_dict[0]["cond_frame_outputs"][stage_id] if add_output_as_cond_frame else output_dict[0]["non_cond_frame_outputs"][stage_id]
@@ -353,36 +348,50 @@ class SAM2FormerTrain(SAM2FormerBase):
                                                                  self.sam_mask_decoder.predictor.num_queries,
                                                                  depth_images=stage_depth_images)
                 epipolar_masks = epipolar_masks.to(self.device)
-                # SourceTargetReliability
-                epipolar_masks = self.source_target_reliability(epipolar_masks)
-                # ViewSpatialPrior
-                view_spatial_prior = self.view_spatial_prior([0,1,2], *epipolar_masks.shape[-2:])
-                # ReliabilityAndBias
-                bias_list = []
-                for re_view_idx in range(3):
-                    view_evaluation = eval(f'pred{re_view_idx}')  # Get the correct view prediction
-                    r, bias = self.reliability_and_bias(view_evaluation['pred_masks_high_res'].squeeze(0), 
-                                                               epipolar_masks[:, re_view_idx], 
-                                                               stage_depth_images[re_view_idx], 
-                                                               view_spatial_prior[re_view_idx])
-                    bias_list.append(bias)
-                pseudo_masks = torch.concatenate(bias_list, dim=1)  # (B, 3, H, W)
-                # Scale the epipolar masks and add bias (Use the same scale and bias as in the memory encoder)
-                # pseudo_masks = pseudo_masks.sigmoid() * self.sigmoid_scale_for_mem_enc + self.sigmoid_bias_for_mem_enc
-                pix_feat = torch.vstack(list(feature_container_for_multiview_fusion.values()))
-                # NOTE pix_feats = (3, 256, 16, 16), pseudo_masks = (O, 3, H, W)
-                # NOTE pix_feat_for_mem = (1, 256, 16, 16) mask_for_mem = (23, 1, 256, 256)
 
-                if not self.flag_epipolar_attn_bias:
+                # If we are using the epipolars as attention bias
+                if self.flag_epipolar_attn_bias:
+                    # SourceTargetReliability
+                    epipolar_masks = self.source_target_reliability(epipolar_masks)
+                    # ViewSpatialPrior
+                    view_spatial_prior = self.view_spatial_prior([0,1,2], *epipolar_masks.shape[-2:])
+                    # ReliabilityAndBias
+                    bias_list = []
+                    # Initialize Auxillary losses
+                    aux_loss = {'consensus_losses': {'agr':0.0, 'null':0.0, 'quiet':0.0, 'tv':0.0}}
+                    for re_view_idx in range(3):
+                        view_evaluation = eval(f'pred{re_view_idx}')  # Get the correct view prediction
+                        r, bias = self.reliability_and_bias(view_evaluation['pred_masks_high_res'].squeeze(0), 
+                                                                epipolar_masks[:, re_view_idx], 
+                                                                stage_depth_images[re_view_idx], 
+                                                                view_spatial_prior[re_view_idx])
+                        bias_list.append(bias)
+                        # Compute view specific consensus loss
+                        aux_loss = consensus_aux_loss(epipolar_masks, view_evaluation, re_view_idx,
+                                                                r, bias, aux_loss)
+                    # Get the bias list to tensor
+                    pseudo_masks = torch.concatenate(bias_list, dim=1)  # (B, 3, H, W)
+                    if self.multiview and 'consensus_losses' in aux_loss:
+                        cons = aux_loss['consensus_losses']
+                        L_consensus = cons['agr'] + cons['null'] + cons['quiet'] + cons['tv']
+                        assert stage_id == 0, "The consensus loss integration for multi stages is not implemented yet!"
+
+                    # Save the bias masks in epipolar dicts
+                    for view_idx in range(3):
+                        encoded_epipolars = {'pseudo_masks': pseudo_masks[:, view_idx]}
+                        encoded_epipolars['object_positions_labels'] = object_pos_label[view_idx]
+                        encoded_epipolar_dict[view_idx] = encoded_epipolars
+
+                else:
+                    # Scale the epipolar masks and add bias (Use the same scale and bias as in the memory encoder)
+                    # pseudo_masks = pseudo_masks.sigmoid() * self.sigmoid_scale_for_mem_enc + self.sigmoid_bias_for_mem_enc
+                    pix_feat = torch.vstack(list(feature_container_for_multiview_fusion.values()))
+                    # NOTE pix_feats = (3, 256, 16, 16), pseudo_masks = (O, 3, H, W)
+                    # NOTE pix_feat_for_mem = (1, 256, 16, 16) mask_for_mem = (23, 1, 256, 256)
                     # Encode the epipolar features
                     for view_idx in range(3):
                         encoded_epipolars = self.epipolar_encoder(pix_feat[view_idx:view_idx+1], pseudo_masks[:,view_idx:view_idx+1])
                         # dictionary with keys "vision_features" and "vision_pos_enc"
-                        encoded_epipolars['object_positions_labels'] = object_pos_label[view_idx]
-                        encoded_epipolar_dict[view_idx] = encoded_epipolars
-                else:
-                    for view_idx in range(3):
-                        encoded_epipolars = {'pseudo_masks': pseudo_masks[:, view_idx]}
                         encoded_epipolars['object_positions_labels'] = object_pos_label[view_idx]
                         encoded_epipolar_dict[view_idx] = encoded_epipolars
 
@@ -406,7 +415,6 @@ class SAM2FormerTrain(SAM2FormerBase):
                     output_dict[view_idx]["cond_frame_outputs"][stage_id] = current_out
                 else:
                     output_dict[view_idx]["non_cond_frame_outputs"][stage_id] = current_out
-
         # end stage loop
 
         if return_dict:
@@ -433,6 +441,7 @@ class SAM2FormerTrain(SAM2FormerBase):
                        else view_out["non_cond_frame_outputs"][stage_id] for stage_id in processing_order} 
                 for view_idx, view_out in output_dict.items()
             }
+        all_frame_outputs['L_consensus'] = L_consensus
 
         return all_frame_outputs
 

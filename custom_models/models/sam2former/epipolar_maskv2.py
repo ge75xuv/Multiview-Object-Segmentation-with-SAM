@@ -284,13 +284,15 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
     o, h, w = predictions0['pred_masks_high_res'].shape[-3:]
     unique_projected_labels = set([obj['label'] for obj in LABEL_PROJECTION_MAP['default'].values()])
     # unique_projected_labels = [i for i in range(num_queries)]  # TODO: get it from the config num_classes
-    masks = torch.zeros([len(unique_projected_labels), 3, 2, h, w], dtype=torch.float32, device=device)
+    num_classes = len(unique_projected_labels)
+    masks = torch.zeros([num_classes, 3, 2, h, w], dtype=torch.float32, device=device)
 
     # Send camera matrices to cuda
     camera_int_ext = [(cam_mtrcs[0].to(device), cam_mtrcs[1].to(device)) for cam_mtrcs in camera_int_ext]
 
-    # Object position dictionary
-    object_pos_label = {view_idx:{pos_idx:None for pos_idx in range(o)} for view_idx in range(3)}
+    # Object position dictionary (It is bad solution to put num_class - 1 because cemeter (class id 22) is not in the dataset)
+    # Real solution is to increase the queries, we have models like that too.
+    object_pos_label = {view_idx:{pos_idx: num_classes-1 for pos_idx in range(o)} for view_idx in range(3)}
 
     # Iterate over the objects of interest and get the masks.
     for obj_idx in LABEL_PROJECTION_MAP['default'].values():  #TODO get it from the config num_classes

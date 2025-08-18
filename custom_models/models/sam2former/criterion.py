@@ -150,6 +150,13 @@ def calculate_uncertainty(logits):
     gt_class_logits = logits.clone()
     return -(torch.abs(gt_class_logits))
 
+def filter_absent_targets(t):
+    # t["masks"]: [N, H, W], t["labels"]: [N]
+    present = (t["masks"].flatten(1).sum(dim=1) > 0)  # True if mask has any 1s
+    return {
+        "labels": t["labels"][present],
+        "masks":  t["masks"][present],
+    }
 
 class SetCriterion(nn.Module):
     """This class computes the loss for DETR.
@@ -381,10 +388,13 @@ class SetCriterion(nn.Module):
         self.empty_weight = self.empty_weight.to(outputs["pred_logits"].device)
         outputs_without_aux = {k: v for k, v in outputs.items() if k != "aux_outputs"}
 
+        # Treat absent objects as no obj
+        targets_filtered = [filter_absent_targets(t) for t in targets]
+
         # Retrieve the matching between the outputs of the last layer and the targets
         # indices are batch sized lists, where the first tensor is the indices of the outputs,
         # and the second tensor is the indices of the targets
-        indices = self.matcher(outputs_without_aux, targets)
+        indices = self.matcher(outputs_without_aux, targets_filtered)
 
         # Compute the average number of target boxes accross all nodes, for normalization purposes
         num_masks = sum(len(t["labels"]) for t in targets)
