@@ -4,7 +4,7 @@ scratch:
   resolution: 256
   num_sampling_points: 1024  # 1024, 4096
   train_batch_size: 1
-  num_train_workers: 2
+  num_train_workers: 1
   base_lr: 3.0e-6  # 5.0e-6
   vision_lr: 3.0e-6  # 3.0e-06
   obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29]
@@ -23,7 +23,7 @@ scratch:
   channels: [256, 256, 256]
   # Stride and common stride determines the extra fpn levels NOTE
   stride: [4, 4, 4]
-  old_dec_layers: true
+  old_dec_layers: false
 
 # dataset:
 #   # PATHS to Dataset
@@ -505,6 +505,7 @@ trainer:
     # resume_from: sam2_logs/07_17_21_33/checkpoints/checkpoint_65.pt
     # resume_from: sam2_logs/07_27_17_33/checkpoints/checkpoint_78.pt
     # resume_from: sam2_logs/08_11_16_37/checkpoints/checkpoint_28.pt
+    resume_from: sam2_logs/08_16_12_45/checkpoints/checkpoint_6.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
     save_freq: 1 # 0 only last checkpoint is saved.
     model_weight_initializer:
@@ -522,7 +523,8 @@ trainer:
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_29_16_47/checkpoints/checkpoint_53.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_27_17_33/checkpoints/checkpoint_78.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_31_15_02/checkpoints/checkpoint_33.pt
-        checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_03_21_22/checkpoints/checkpoint_37.pt
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_03_21_22/checkpoints/checkpoint_37.pt
+        checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_16_12_45/checkpoints/checkpoint_6.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_11_16_37/checkpoints/checkpoint_28.pt
         ckpt_state_dict_keys: ['model']
 

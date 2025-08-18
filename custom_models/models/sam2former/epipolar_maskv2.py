@@ -336,9 +336,9 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
             epi_mask_for_views = epipolar_mask(camera_int_ext, pts_cam0, pts_cam1, pts_cam2, mask_cam0.shape[-2:], step=step)
 
         # Find the prob of that object
-        prob_obj0 = pred_logits0[pos_obj0].max()
-        prob_obj1 = pred_logits1[pos_obj1].max()
-        prob_obj2 = pred_logits2[pos_obj2].max()
+        prob_obj0 = pred_logits0[pos_obj0].max()  if pos_obj0[0].numel() > 0 else 0.0
+        prob_obj1 = pred_logits1[pos_obj1].max()  if pos_obj1[0].numel() > 0 else 0.0
+        prob_obj2 = pred_logits2[pos_obj2].max()  if pos_obj2[0].numel() > 0 else 0.0
 
         dbg = [dbg_pts.shape[1] < 2 for dbg_pts_tuple in epi_mask_for_views.values() for dbg_pts in dbg_pts_tuple if dbg_pts.numel() > 0]
         if torch.any(torch.tensor(dbg, dtype=torch.bool)):

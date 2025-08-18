@@ -264,7 +264,7 @@ class MiniDataset(Dataset):
             video_frames_segmentation_mask = self.segmentation_masks[index]
 
             # Open the images and process (resizing to input size, padding, etc.)
-            frame_obj_list, frames_segmentation_mask = self._open_and_process(video_frames, video_frames_segmentation_mask)
+            frame_obj_list = self._open_and_process(video_frames, video_frames_segmentation_mask)
 
             # Create the VideoDatapoint
             size_x_y = frame_obj_list[0].data.shape[-2:]
@@ -289,13 +289,17 @@ class MiniDataset(Dataset):
 
     def _open_and_process(self, video_frames, video_frames_segmentation_mask):
         frame_obj_list = []
-        frames_segmentation_mask = []
+        # frames_segmentation_mask = []
 
         # Iterate over the frames of a video
         for frame_idx, frame in enumerate(video_frames):
             # Open frame and segmentation mask as pillow image
-            im_frame = Image.open(frame).convert("RGB")
-            segmentation_mask = Image.open(video_frames_segmentation_mask[frame_idx]).convert("RGB")
+            with Image.open(frame) as im_frame:
+                im_frame = im_frame.convert("RGB")
+                im_frame.load()
+            with Image.open(video_frames_segmentation_mask[frame_idx]) as segmentation_mask:
+                segmentation_mask = segmentation_mask.convert("RGB")
+                segmentation_mask.load()
             seg_np = np.array(segmentation_mask)[:,:,0]  # We only need one channel, it's same anyways
 
             # Initialize one-hot-mask and obj list
@@ -319,8 +323,8 @@ class MiniDataset(Dataset):
             im_frame = self.resize_image(self.to_tensor(im_frame))
             im_frame = self._add_padding(im_frame, self.input_image_size)
             frame_obj_list.append(Frame(im_frame, obj_list))
-            frames_segmentation_mask.append(segmentation_mask)
-        return frame_obj_list, frames_segmentation_mask
+            # frames_segmentation_mask.append(segmentation_mask)
+        return frame_obj_list
 
     def _add_padding(self, input_image:torch.Tensor, out_shape:int):
         H = out_shape - input_image.shape[-2]

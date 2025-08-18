@@ -225,8 +225,8 @@ def sample_from_obj_id(target_labels, target_masks, obj_id, point_coords, num_po
             w_coords = mask_pts[2]
             h_coords = mask_pts[1]
         # Normalize the coordinates to [0, 1]
-        w_normalized = w_coords.float() / (W)
-        h_normalized = h_coords.float() / (H)
+        w_normalized = (w_coords.float() + 0.5) / (W)
+        h_normalized = (h_coords.float() + 0.5) / (H)
 
         sampled_points = torch.stack([w_normalized, h_normalized], dim=1)  # [N_sampled, 2]
 

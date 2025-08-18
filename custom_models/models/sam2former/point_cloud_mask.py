@@ -83,9 +83,9 @@ def point_cloud_mask(cam_int_ext, pts_cam0, pts_cam1, pts_cam2, gt_depth_image, 
     pixel_pts2_1 = reprojection_to_image_frame(K2, T2, obj_pc1, H, W) if obj_pc1.shape[1] > 0 else torch.tensor([[]])
 
     pc_masks_for_views = {
-        0: (pixel_pts0_1, pixel_pts0_2),
-        1: (pixel_pts1_0, pixel_pts1_2),
-        2: (pixel_pts2_0, pixel_pts2_1),
+        0: (pixel_pts0_1.T, pixel_pts0_2.T),
+        1: (pixel_pts1_0.T, pixel_pts1_2.T),
+        2: (pixel_pts2_0.T, pixel_pts2_1.T),
     }
 
     return pc_masks_for_views

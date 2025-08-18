@@ -95,14 +95,18 @@ class ReliabilityAndBias(nn.Module):
         self.out_conv = nn.Conv2d(16, 1, 1)
 
         # Lazily replaced when we know input channels
-        self._adapter_built = False
+        depth_included = True
+        if depth_included:
+            self._build_adapter(9)
+        else:
+            self._build_adapter(6)
 
     @staticmethod
     def _safe_logit(p: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
         p = p.clamp(min=eps, max=1 - eps)
         return torch.log(p) - torch.log1p(-p)
 
-    def _build_adapter(self, in_ch: int, device: torch.device):
+    def _build_adapter(self, in_ch: int, device: torch.device='cpu'):
         # Bring arbitrary in_ch to 32 channels with a 1x1 conv
         self.adapter = nn.Sequential(
             nn.Conv2d(in_ch, 32, 1),
