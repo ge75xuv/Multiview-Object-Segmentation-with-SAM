@@ -299,36 +299,60 @@ class SetCriterion(nn.Module):
             return losses
 
         with torch.no_grad():
-            # sample point_coords
+            want_per_class = max(1, self.num_points // 16)  # your per-class budget
+            # choose how many extras you want: 4/16 of self.num_points
+            extra_points = max(1, want_per_class * len(self.obj_ids_extra_sampling))  # = 25% of num_points
+            total_points = self.num_points + extra_points
+            # 1) Sample a fixed base set of size total_points (same on all ranks)
             point_coords = get_uncertain_point_coords_with_randomness(
                 src_masks,
                 lambda logits: calculate_uncertainty(logits),
-                self.num_points,
+                total_points,
                 self.oversample_ratio,
                 self.importance_sample_ratio,
-            )
-            # Sample specific classes for accuracy
-            num_points = self.num_points // 16
-            obj_id = 2
-            point_coords = sample_from_obj_id(target_labels, target_masks, obj_id, point_coords, num_points)
-            obj_id = 12
-            point_coords = sample_from_obj_id(target_labels, target_masks, obj_id, point_coords, num_points)
-            obj_id = 13
-            point_coords = sample_from_obj_id(target_labels, target_masks, obj_id, point_coords, num_points)
-            obj_id = 14
-            point_coords = sample_from_obj_id(target_labels, target_masks, obj_id, point_coords, num_points)
-            # get gt labels
+            )  # [N, total_points, 2]
+            # 2) Gather up to `extra_points` class-biased points
+            # We'll try to pull per-class chunks, but cap to extra_points overall.
+            class_ids = self.obj_ids_extra_sampling
+            biased = point_coords.new_empty(point_coords.shape[0], 0, 2)
+            for obj_id in class_ids:
+                cand = sample_from_obj_id(
+                    target_labels, target_masks, obj_id, point_coords, want_per_class
+                )
+                # `cand` is expected to append points; we only want the newly added tail
+                newly_added = cand.shape[1] - point_coords.shape[1]
+                if newly_added > 0:
+                    biased_tail = cand[:, -newly_added:, :]                 # take only the new ones
+                    biased = torch.cat([biased, biased_tail], dim=1)        # accumulate
+                    point_coords = cand                                     # advance the base
+                # stop if we already gathered enough biased points
+                if biased.shape[1] >= extra_points:
+                    break
+            # 3) Ensure exactly `total_points`: fill last `extra_points` slots with biased points if available
+            N, P, _ = point_coords.shape
+            assert P >= total_points  # should hold because we appended along the way
+            # Take the first total_points as our base slice
+            point_coords = point_coords[:, :total_points, :]
+            # Now overwrite the last extra_points with as many biased as we have (pad if fewer)
+            have = min(biased.shape[1], extra_points)
+            if have > 0:
+                point_coords[:, -have:, :] = biased[:, :have, :]
+            # if have < extra_points, the remaining tail stays as the original random points
+            # 4) Sample labels/logits at those coords (shapes are fixed across ranks)
             point_labels = point_sample(
                 target_masks,
                 point_coords,
                 align_corners=False,
-            ).squeeze(1)
+            ).squeeze(1)   # [N, total_points]
 
         point_logits = point_sample(
             src_masks,
             point_coords,
             align_corners=False,
         ).squeeze(1)
+
+        # (optional sanity)
+        assert point_logits.shape == point_labels.shape
 
         losses = {
             "loss_mask": sigmoid_ce_loss_jit(point_logits, point_labels, num_masks),

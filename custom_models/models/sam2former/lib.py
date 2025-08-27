@@ -80,8 +80,21 @@ def load_state_dict_into_model(
     except:
         Warning(f"Base model checkpoint is used")
 
+    # The pixel decoder in earlier versions have 3 layers now we increase it to 4.
+    try:
+        if model.sam_mask_decoder.pixel_decoder.transformer.level_embed.shape[0] != state_dict['sam_mask_decoder.pixel_decoder.transformer.level_embed'].shape[0]:
+            Warning(f"Model level embed size {model.sam_mask_decoder.pixel_decoder.transformer.level_embed.shape[0]} does not match state dict level embed size {state_dict['sam_mask_decoder.pixel_decoder.transformer.level_embed'].shape[0]}.")
+            # Remove the pixel decoder transformer from the state dict
+            state_dict = {k: v for k, v in state_dict.items() if not k.startswith('sam_mask_decoder.pixel_decoder')}
+    except KeyError:
+        Warning(f"Base model checkpoint is used")
+
     # Load state dict
-    missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+    try:
+        missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+    except Exception as e:
+        raise RuntimeError(f"Error loading state dict into model: {e}")
+        
     #TODO maybe we just use one projection layer
     # Load the multi object memory proj as multi object epipolar projection
     len_missing_keys = len(missing_keys)
@@ -106,7 +119,8 @@ def load_state_dict_into_model(
                        if not (k.startswith("sam_mask_decoder") or
                                k.startswith("sam_prompt_encoder") or
                                k.startswith("memory") or  # Included in base model checkpoint
-                               k.startswith("multi_object_memory"))  # Memory part projection is changed
+                               k.startswith("multi_object_memory") or  # Memory part projection is changed
+                               k.startswith('sam_mask_decoder'))
                        ]
 
     # Check if the epipolar encoder state dict exists, if not load the memory encoder state dict

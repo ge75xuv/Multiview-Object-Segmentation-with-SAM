@@ -109,6 +109,7 @@ class SAM2FormerBase(torch.nn.Module):
         # Use level 0, 1, 2 for high-res setting, or just level 2 for the default setting
         self.use_high_res_features_in_sam = use_high_res_features_in_sam
         self.num_feature_levels = 3 if use_high_res_features_in_sam else 1
+        self.num_feature_levels += 1 if self.image_encoder.scalp == 0 else 0  # To increase the num_channels for the Mask2former
         self.use_obj_ptrs_in_encoder = use_obj_ptrs_in_encoder
         self.max_obj_ptrs_in_encoder = max_obj_ptrs_in_encoder
         if use_obj_ptrs_in_encoder:
@@ -323,8 +324,8 @@ class SAM2FormerBase(torch.nn.Module):
         B = backbone_features.size(0)
         device = backbone_features.device
         assert backbone_features.size(1) == self.sam_prompt_embed_dim
-        assert backbone_features.size(2) == self.sam_image_embedding_size
-        assert backbone_features.size(3) == self.sam_image_embedding_size
+        # assert backbone_features.size(2) == self.sam_image_embedding_size
+        # assert backbone_features.size(3) == self.sam_image_embedding_size
         
         total_features = high_res_features + [backbone_features]
         assert len(total_features) == len(self.sam_mask_decoder.in_features), "Given number of input features and calculated input features do not match"
@@ -779,9 +780,9 @@ class SAM2FormerBase(torch.nn.Module):
         """Encode the current image and its prediction into a memory feature."""
         B = current_vision_feats[-1].size(1)  # batch size on this frame
         C = self.hidden_dim
-        H, W = feat_sizes[-1]  # top-level (lowest-resolution) feature size
+        H, W = feat_sizes[-1] if self.num_feature_levels == 3 else feat_sizes[-2]  # top-level (lowest-resolution) feature size
         # top-level feature, (HW)BC => BCHW
-        pix_feat = current_vision_feats[-1].permute(1, 2, 0).view(B, C, H, W)
+        pix_feat = current_vision_feats[-1].permute(1, 2, 0).view(B, C, H, W) if self.num_feature_levels == 3 else current_vision_feats[-2].permute(1, 2, 0).view(B, C, H, W)
         if self.non_overlap_masks_for_mem_enc and not self.training:
             # optionally, apply non-overlapping constraints to the masks (it's applied
             # in the batch dimension and should only be used during eval, where all
@@ -856,9 +857,9 @@ class SAM2FormerBase(torch.nn.Module):
         pix_feat = self._prepare_memory_conditioned_features(
             frame_idx=frame_idx,
             is_init_cond_frame=is_init_cond_frame,
-            current_vision_feats=current_vision_feats[-1:],
-            current_vision_pos_embeds=current_vision_pos_embeds[-1:],
-            feat_sizes=feat_sizes[-1:],
+            current_vision_feats=current_vision_feats[-1:] if self.num_feature_levels == 3 else current_vision_feats[-2:-1],
+            current_vision_pos_embeds=current_vision_pos_embeds[-1:] if self.num_feature_levels == 3 else current_vision_pos_embeds[-2:-1],
+            feat_sizes=feat_sizes[-1:] if self.num_feature_levels == 3 else feat_sizes[-2:-1],
             output_dict=output_dict,
             num_frames=num_frames,
             track_in_reverse=track_in_reverse,

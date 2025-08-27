@@ -279,6 +279,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         depth_images = {0:input.view1_depth, 1:input.view2_depth, 2:input.view3_depth} if self.multiview else None
         feature_container_for_multiview_fusion = {}
         encoded_epipolar_dict = {0: {}, 1: {}, 2: {}}
+        L_consensus = None
         # t_stage = time.time()
         for stage_id in processing_order:
             for view_idx, input in enumerate(view_inputs):
@@ -348,11 +349,11 @@ class SAM2FormerTrain(SAM2FormerBase):
                                                                  self.sam_mask_decoder.predictor.num_queries,
                                                                  depth_images=stage_depth_images)
                 epipolar_masks = epipolar_masks.to(self.device)
+                # SourceTargetReliability
+                epipolar_masks = self.source_target_reliability(epipolar_masks)
 
                 # If we are using the epipolars as attention bias
                 if self.flag_epipolar_attn_bias:
-                    # SourceTargetReliability
-                    epipolar_masks = self.source_target_reliability(epipolar_masks)
                     # ViewSpatialPrior
                     view_spatial_prior = self.view_spatial_prior([0,1,2], *epipolar_masks.shape[-2:])
                     # ReliabilityAndBias
@@ -384,7 +385,8 @@ class SAM2FormerTrain(SAM2FormerBase):
 
                 else:
                     # Scale the epipolar masks and add bias (Use the same scale and bias as in the memory encoder)
-                    # pseudo_masks = pseudo_masks.sigmoid() * self.sigmoid_scale_for_mem_enc + self.sigmoid_bias_for_mem_enc
+                    pseudo_masks = epipolar_masks.sigmoid() * self.sigmoid_scale_for_mem_enc 
+                    pseudo_masks = pseudo_masks.sum(2) + self.sigmoid_bias_for_mem_enc
                     pix_feat = torch.vstack(list(feature_container_for_multiview_fusion.values()))
                     # NOTE pix_feats = (3, 256, 16, 16), pseudo_masks = (O, 3, H, W)
                     # NOTE pix_feat_for_mem = (1, 256, 16, 16) mask_for_mem = (23, 1, 256, 256)
@@ -441,7 +443,7 @@ class SAM2FormerTrain(SAM2FormerBase):
                        else view_out["non_cond_frame_outputs"][stage_id] for stage_id in processing_order} 
                 for view_idx, view_out in output_dict.items()
             }
-        all_frame_outputs['L_consensus'] = L_consensus
+        all_frame_outputs.update({'L_consensus': L_consensus}) if L_consensus is not None else None
 
         return all_frame_outputs
 

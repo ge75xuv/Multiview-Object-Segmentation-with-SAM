@@ -14,14 +14,16 @@ from argparse import ArgumentParser
 
 import submitit
 import torch
-
 from hydra import compose, initialize
 from hydra.utils import instantiate
-
 from iopath.common.file_io import g_pathmgr
 from omegaconf import OmegaConf
 
 from training.utils.train_utils import makedir, register_omegaconf_resolvers
+
+# Multiprocessing errors
+import torch.multiprocessing as mp
+mp.set_sharing_strategy("file_system")   # instead of the default "file_descriptor"
 
 os.environ["HYDRA_FULL_ERROR"] = "1"
 

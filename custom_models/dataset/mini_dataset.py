@@ -15,6 +15,9 @@ from custom_models.helpers.configurations import *
 from custom_models.helpers.load_camera_data import load_camera_data
 from custom_models.helpers.load_depth_image import load_depth_image
 
+from PIL import ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
 class MiniDataset(Dataset):
     
     def __init__(self,
@@ -225,6 +228,9 @@ class MiniDataset(Dataset):
         del take_images
         del take_seg_masks
 
+        self.images = list(self.images)
+        self.segmentation_masks = list(self.segmentation_masks)
+
         # Python multiprocessing manager
         # This is a workaround for the multiprocessing issue with PyTorch
         # manager = Manager()
@@ -232,8 +238,8 @@ class MiniDataset(Dataset):
         # self.segmentation_masks = manager.list(self.segmentation_masks)
 
         # Convert the list into a numpy array
-        self.images = np.array(self.images)
-        self.segmentation_masks = np.array(self.segmentation_masks)
+        # self.images = np.array(self.images)
+        # self.segmentation_masks = np.array(self.segmentation_masks)
 
         # TODO DELETE AFTER
         self.small_onject_refinement = False
@@ -347,7 +353,11 @@ class MiniDataset(Dataset):
             sampler=sampler, 
             shuffle=shuffle,
             collate_fn=self.collate_fn, 
-            num_workers=self.num_workers
+            num_workers=self.num_workers,
+            persistent_workers=False,
+            pin_memory=False,
+            prefetch_factor=1,
+            multiprocessing_context='spawn',
         )
 
     def load_checkpoint_state(*args, **kwargs):

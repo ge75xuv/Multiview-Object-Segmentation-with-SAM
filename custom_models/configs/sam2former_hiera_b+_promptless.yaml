@@ -5,25 +5,36 @@ scratch:
   num_sampling_points: 1024  # 1024, 4096
   train_batch_size: 1
   num_train_workers: 1
-  base_lr: 3.0e-6  # 5.0e-6
+  base_lr: 3.0e-5  # 5.0e-6
   vision_lr: 3.0e-6  # 3.0e-06
   obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29]
   obj_ids_extra_sampling: [2, 12, 13, 14]  # extra object ids to sample from for accuracy
   num_frames: 1
   multiview: true
   depth_image: true
-  flag_epipolar_attn_bias: true  # use epipolar attention bias
+  flag_epipolar_attn_bias: false  # use epipolar attention bias
   max_epochs: 70
   # Decoder
   num_queries: 23
   num_classes: 23
   label_projection_type: 'default'  # 'default' or 'human'
   mask_dim: 256
+
+  # Extra residual connection
+  # scalp: 0
+  # name: ["res2", "res3", "res4", "res5"]
+  # channels: [256, 256, 256, 256]
+  # # Stride and common stride determines the extra fpn levels NOTE
+  # stride: [4, 4, 4, 4]
+  # old_dec_layers: false
+
+  # NO Extra residual connection
+  scalp: 1
   name: ["res3", "res4", "res5"]
   channels: [256, 256, 256]
   # Stride and common stride determines the extra fpn levels NOTE
   stride: [4, 4, 4]
-  old_dec_layers: false
+  old_dec_layers: true
 
 # dataset:
 #   # PATHS to Dataset
@@ -82,7 +93,7 @@ trainer:
     multiview: ${scratch.multiview}
     image_encoder:
       _target_: sam2.modeling.backbones.image_encoder.ImageEncoder
-      scalp: 1
+      scalp: ${scratch.scalp}
       trunk:
         _target_: sam2.modeling.backbones.hieradet.Hiera
         embed_dim: 112
@@ -194,7 +205,7 @@ trainer:
         mask_dim: ${scratch.mask_dim}
         norm: "GN"
         # deformable transformer encoder args
-        transformer_in_features: ["res3", "res4", "res5"]
+        transformer_in_features: ${scratch.name}
         common_stride: 4
       loss_weight: 1.0
       ignore_value: 255
@@ -343,7 +354,7 @@ trainer:
     train:
       _target_: custom_models.dataset.mini_dataset.MiniDataset
       batch_size: ${scratch.train_batch_size}
-      split_type: 'train'
+      split_type: 'over_train'
       num_frames: ${scratch.num_frames}
       input_image_size: ${scratch.resolution}
       object_labels: ${scratch.obj_labels}
@@ -361,7 +372,7 @@ trainer:
     val:
       _target_: custom_models.dataset.mini_dataset.MiniDataset
       batch_size: ${scratch.train_batch_size}
-      split_type: 'val'
+      split_type: 'over_train'
       num_frames: ${scratch.num_frames}
       input_image_size: ${scratch.resolution}
       object_labels: ${scratch.obj_labels}
@@ -505,7 +516,8 @@ trainer:
     # resume_from: sam2_logs/07_17_21_33/checkpoints/checkpoint_65.pt
     # resume_from: sam2_logs/07_27_17_33/checkpoints/checkpoint_78.pt
     # resume_from: sam2_logs/08_11_16_37/checkpoints/checkpoint_28.pt
-    resume_from: sam2_logs/08_16_12_45/checkpoints/checkpoint_6.pt
+    # resume_from: sam2_logs/08_16_12_45/checkpoints/checkpoint_6.pt
+    # resume_from: sam2_logs/08_25_12_58/checkpoints/checkpoint_20.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
     save_freq: 1 # 0 only last checkpoint is saved.
     model_weight_initializer:
@@ -523,9 +535,10 @@ trainer:
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_29_16_47/checkpoints/checkpoint_53.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_27_17_33/checkpoints/checkpoint_78.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_31_15_02/checkpoints/checkpoint_33.pt
-        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_03_21_22/checkpoints/checkpoint_37.pt
-        checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_16_12_45/checkpoints/checkpoint_6.pt
+        checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_03_21_22/checkpoints/checkpoint_37.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_11_16_37/checkpoints/checkpoint_28.pt
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_13_17_25_img_model/checkpoints/checkpoint_70.pt
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_25_12_58/checkpoints/checkpoint_20.pt
         ckpt_state_dict_keys: ['model']
 
 launcher:
