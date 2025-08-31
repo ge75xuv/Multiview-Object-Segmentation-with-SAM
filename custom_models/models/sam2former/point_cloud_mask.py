@@ -30,7 +30,7 @@ def backproject_to_world(pts_cam, K, T, mask_depth):
     obj_pc = T @ torch.concatenate([im_coords_depth_scaled, torch.ones_like(x_)[None,:]], axis=0)  # Transforming to world coordinates 4xN
     return obj_pc
 
-def reprojection_to_image_frame(K, T, obj_pc, H, W):
+def reprojection_to_image_frame(K, T, obj_pc, H, W, score=None):
     # Projecting back to image coordinates
     projected_pts = K @ (torch.linalg.inv(T) @ obj_pc)[:3, :]  # 3xN
     normalized_pts = projected_pts / projected_pts[2, :]
@@ -40,12 +40,16 @@ def reprojection_to_image_frame(K, T, obj_pc, H, W):
     # Refinement
     refinement = (pixel_pts[1] > (H-1)) | (pixel_pts[1] < 0) | (pixel_pts[0] > (W-1)) | (pixel_pts[0] < 0)
     pixel_pts[:, refinement] = 0  # Set invalid pixel coordinates to 0
-    return pixel_pts
+    if score is not None:
+        score[refinement] = 0  # Set scores of invalid pixel coordinates to 0
+    return pixel_pts, score
 
-def point_cloud_mask(cam_int_ext, pts_cam0, pts_cam1, pts_cam2, gt_depth_image, img_size):
+def point_cloud_mask(cam_int_ext, pts_cam0, pts_cam1, pts_cam2, gt_depth_image, img_size, scores=None):
     # Store Intrinsics and extrinsics
     K0, K1, K2 = cam_int_ext[0][0], cam_int_ext[1][0], cam_int_ext[2][0]
     T0, T1, T2 = cam_int_ext[0][1], cam_int_ext[1][1], cam_int_ext[2][1]  # Transformations are from camera to world coordinates
+
+    s0, s1, s2 = scores if scores is not None else (None, None, None)
 
     # Create empty point clouds
     device = cam_int_ext[0][0].device
@@ -73,19 +77,25 @@ def point_cloud_mask(cam_int_ext, pts_cam0, pts_cam1, pts_cam2, gt_depth_image, 
     # Reprojection to the image frame
     H, W = img_size
     # To 0
-    pixel_pts0_1 = reprojection_to_image_frame(K0, T0, obj_pc1, H, W) if obj_pc1.shape[1] > 0 else torch.tensor([[]])
-    pixel_pts0_2 = reprojection_to_image_frame(K0, T0, obj_pc2, H, W) if obj_pc2.shape[1] > 0 else torch.tensor([[]])
+    pixel_pts0_1, score0_1 = reprojection_to_image_frame(K0, T0, obj_pc1, H, W, s1) if obj_pc1.shape[1] > 0 else (torch.tensor([[]]), None)
+    pixel_pts0_2, score0_2 = reprojection_to_image_frame(K0, T0, obj_pc2, H, W, s2) if obj_pc2.shape[1] > 0 else (torch.tensor([[]]), None)
     # To 1
-    pixel_pts1_0 = reprojection_to_image_frame(K1, T1, obj_pc0, H, W) if obj_pc0.shape[1] > 0 else torch.tensor([[]])
-    pixel_pts1_2 = reprojection_to_image_frame(K1, T1, obj_pc2, H, W) if obj_pc2.shape[1] > 0 else torch.tensor([[]])
+    pixel_pts1_0, score1_0 = reprojection_to_image_frame(K1, T1, obj_pc0, H, W, s0) if obj_pc0.shape[1] > 0 else (torch.tensor([[]]), None)
+    pixel_pts1_2, score1_2 = reprojection_to_image_frame(K1, T1, obj_pc2, H, W, s2) if obj_pc2.shape[1] > 0 else (torch.tensor([[]]), None)
     # To 2
-    pixel_pts2_0 = reprojection_to_image_frame(K2, T2, obj_pc0, H, W) if obj_pc0.shape[1] > 0 else torch.tensor([[]])
-    pixel_pts2_1 = reprojection_to_image_frame(K2, T2, obj_pc1, H, W) if obj_pc1.shape[1] > 0 else torch.tensor([[]])
+    pixel_pts2_0, score2_0 = reprojection_to_image_frame(K2, T2, obj_pc0, H, W, s0) if obj_pc0.shape[1] > 0 else (torch.tensor([[]]), None)
+    pixel_pts2_1, score2_1 = reprojection_to_image_frame(K2, T2, obj_pc1, H, W, s1) if obj_pc1.shape[1] > 0 else (torch.tensor([[]]), None)
 
     pc_masks_for_views = {
         0: (pixel_pts0_1.T, pixel_pts0_2.T),
         1: (pixel_pts1_0.T, pixel_pts1_2.T),
         2: (pixel_pts2_0.T, pixel_pts2_1.T),
     }
+    
+    score_masks_for_views = {
+        0: (score0_1, score0_2),
+        1: (score1_0, score1_2),
+        2: (score2_0, score2_1),
+    }
 
-    return pc_masks_for_views
+    return pc_masks_for_views, score_masks_for_views

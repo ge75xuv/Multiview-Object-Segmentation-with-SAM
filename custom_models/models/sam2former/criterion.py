@@ -18,7 +18,7 @@ from custom_models.helpers.configurations import OBJECT_FREQUENCY_PATH
 from .utils.misc import is_dist_avail_and_initialized, nested_tensor_from_tensor_list
 
 
-def sigmoid_focal_loss(inputs, targets, num_masks:float, alpha: float=0.25, gamma: float=2, alpha_vec: torch.Tensor=None, red_sum: bool=True):
+def sigmoid_focal_loss(inputs, targets, num_masks:float, alpha: float=0.25, gamma: float=2, red_sum: bool=True):
     """
     Loss used in RetinaNet for dense detection: https://arxiv.org/abs/1708.02002.
     Args:
@@ -39,17 +39,18 @@ def sigmoid_focal_loss(inputs, targets, num_masks:float, alpha: float=0.25, gamm
     p_t = prob * targets + (1 - prob) * (1 - targets)
     loss = ce_loss * ((1 - p_t) ** gamma)
 
-    if alpha_vec is not None:
-        # alpha_vec is a vector of weights for each mask, used to weight the loss for each mask
-        alpha_t = alpha_vec * targets + (1 - alpha_vec) * (1 - targets)
+    if alpha >= 0:
+        alpha_t = alpha * targets + (1 - alpha) * (1 - targets)
         loss = alpha_t * loss
-    elif alpha >= 0:
+    if isinstance(alpha, torch.Tensor):
+        # expects shape [C], broadcast across batch & spatial dims
+        # reshape to [1, C, 1, 1,...] for broadcasting
+        view_shape = [1, -1] + [1] * (loss.ndim - 2)
+        alpha = alpha.view(*view_shape).to(loss.device, loss.dtype)
         alpha_t = alpha * targets + (1 - alpha) * (1 - targets)
         loss = alpha_t * loss
 
-    if red_sum:
-        return loss.mean(1).sum() / num_masks
-    return loss.mean(1)
+    return loss.mean(1).sum() / num_masks
 
 sigmoid_focal_loss_jit = torch.jit.script(
     sigmoid_focal_loss
@@ -167,7 +168,8 @@ class SetCriterion(nn.Module):
 
     def __init__(self, num_classes, matcher, weight_dict, eos_coef, losses,
                  num_points, oversample_ratio, importance_sample_ratio, image_size=512,
-                 loss_weighting='default', weight_soft_co=0.1, deep_supervision=True, pointwise_mask=True, obj_ids_extra_sampling=None):
+                 loss_weighting='default', weight_soft_co=0.1, deep_supervision=True, pointwise_mask=True, obj_ids_extra_sampling=None,
+                 alpha=0.2):
         """Create the criterion.
         Parameters:
             num_classes: number of object categories, omitting the special no-object category
@@ -184,6 +186,7 @@ class SetCriterion(nn.Module):
         self.losses = losses
         empty_weight = torch.ones(self.num_classes + 1)
         empty_weight[-1] = self.eos_coef
+        self.alpha = alpha
         self.weight_soft_co = weight_soft_co
         self.obj_ids_extra_sampling = obj_ids_extra_sampling if obj_ids_extra_sampling is not None else [2, 12, 13, 14]
 
@@ -287,11 +290,10 @@ class SetCriterion(nn.Module):
             # target_masks_down = self.resize_target_(target_masks).flatten(1)
             target_masks = target_masks.flatten(1)
             src_masks = src_masks.flatten(1)
-            alpha = 0.25
             # alpha_vec = self.empty_weight[tgt_idx[1]].to(src_masks.device)[:,None]
             losses = {
             # "loss_mask": sigmoid_ce_loss_jit(src_masks, target_masks_down, num_masks),
-            "loss_mask": sigmoid_focal_loss_jit(src_masks, target_masks, num_masks, alpha=alpha),
+            "loss_mask": sigmoid_focal_loss_jit(src_masks, target_masks, num_masks, alpha=self.alpha),
             "loss_dice": dice_loss_jit(src_masks, target_masks, num_masks),
         }
             del src_masks
@@ -413,7 +415,8 @@ class SetCriterion(nn.Module):
         outputs_without_aux = {k: v for k, v in outputs.items() if k != "aux_outputs"}
 
         # Treat absent objects as no obj
-        targets_filtered = [filter_absent_targets(t) for t in targets]
+        # targets_filtered = [filter_absent_targets(t) for t in targets]  # 18.08.
+        targets_filtered = targets
 
         # Retrieve the matching between the outputs of the last layer and the targets
         # indices are batch sized lists, where the first tensor is the indices of the outputs,

@@ -15,7 +15,7 @@ from sam2.modeling.sam2_utils import get_1d_sine_pe, MLP, select_closest_cond_fr
 
 from .lib import ShapeSpec
 from .mask_former_head import MaskFormerHead
-from custom_models.helpers.configurations import OBJECTS_EPIPOLAR
+from custom_models.helpers.configurations import OBJECTS_EPIPOLAR, OBJECTS_DEPTH_PROJ
 
 # a large negative value as a placeholder score for missing objects
 NO_OBJ_SCORE = -1024.0
@@ -506,7 +506,8 @@ class SAM2FormerBase(torch.nn.Module):
         """Fuse the current frame's visual feature map with previous epipolar features."""
         # The shape is changed in the memory encoding, change it back to default.
         current_vision_feats = current_vision_feats.flatten(2).permute(2, 0, 1)
-        B = current_vision_feats.size(1)  # batch size on this frame
+        # B = current_vision_feats.size(1)  # batch size on this frame
+        B = 1  # Set it to 1 for single-frame processing
         C = self.hidden_dim
         H, W = feat_sizes[-1]  # top-level (lowest-resolution) feature size
         device = current_vision_feats[-1].device
@@ -537,9 +538,8 @@ class SAM2FormerBase(torch.nn.Module):
         epi_pos_enc = epi_pos_enc[:, ordered_obj_label]
 
         # Step 3: Add the no-epipolar embedding to the object that we dont calculate epipolars for
-        #NOTE THIS APPROACH IS NOT POSSIBLE SINCE THE EMBEDDING DIMENSIONS ARE NOT THE SAME (EPIPOLAR ENCODING CHANGES EMBEDDING DIMENSION)
         multi_obj_no_epipolar_embed = torch.zeros_like(epi_feats)
-        no_epipolar_mask = [pos for pos, lbl in object_pos_label.items() if lbl not in OBJECTS_EPIPOLAR]
+        no_epipolar_mask = [pos for pos, lbl in object_pos_label.items() if not (lbl in OBJECTS_EPIPOLAR or lbl in OBJECTS_DEPTH_PROJ)]
         no_epipolar_object_embed = self.no_epipolar_embed_proj(self.no_epipolar_embed)
         multi_obj_no_epipolar_embed[:, no_epipolar_mask] = no_epipolar_object_embed
         epi_feats += multi_obj_no_epipolar_embed
@@ -548,7 +548,7 @@ class SAM2FormerBase(torch.nn.Module):
         # epi_feats = self.multi_object_epi_proj(epi_feats.mT).mT
         epi_pos_enc = epi_pos_enc[:, 0:1]
         # epi_pos_enc = self.multi_object_epi_pos_proj(epi_pos_enc.mT).mT
-        
+
         if current_vision_feats.shape[1] != epi_feats.shape[1]:
             Q = epi_feats.shape[1]
             current_vision_feats = current_vision_feats.repeat(1, Q, 1)
@@ -763,7 +763,11 @@ class SAM2FormerBase(torch.nn.Module):
             num_obj_ptr_tokens=num_obj_ptr_tokens,
         )
         if not early_collapse:
-            pix_feat_with_mem = self.multi_object_memory_proj(pix_feat_with_mem.transpose(0,1)).transpose(0,1)
+            if self.multiview and not self.flag_epipolar_attn_bias:
+                pix_feat_with_mem = pix_feat_with_mem.permute(1, 2, 0).view(O, C, H, W)
+                return pix_feat_with_mem
+            else:
+                pix_feat_with_mem = self.multi_object_memory_proj(pix_feat_with_mem.transpose(0,1)).transpose(0,1)
 
         # reshape the output (HW)BC => BCHW
         pix_feat_with_mem = pix_feat_with_mem.permute(1, 2, 0).view(B, C, H, W)

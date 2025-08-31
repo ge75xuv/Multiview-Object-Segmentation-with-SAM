@@ -2,17 +2,18 @@
 
 scratch:
   resolution: 256
-  num_sampling_points: 1024  # 1024, 4096
+  num_sampling_points: 4096  # 1024, 4096
   train_batch_size: 1
   num_train_workers: 1
   base_lr: 3.0e-5  # 5.0e-6
   vision_lr: 3.0e-6  # 3.0e-06
   obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29]
   obj_ids_extra_sampling: [2, 12, 13, 14]  # extra object ids to sample from for accuracy
-  num_frames: 1
+  num_frames: 2
   multiview: true
   depth_image: true
   flag_epipolar_attn_bias: false  # use epipolar attention bias
+  run_first_no_grad: false
   max_epochs: 70
   # Decoder
   num_queries: 23
@@ -91,6 +92,7 @@ trainer:
     freeze_image_encoder: True
     freeze_sam_mask_decoder: False
     multiview: ${scratch.multiview}
+    run_first_no_grad: ${scratch.run_first_no_grad}
     image_encoder:
       _target_: sam2.modeling.backbones.image_encoder.ImageEncoder
       scalp: ${scratch.scalp}
@@ -354,7 +356,7 @@ trainer:
     train:
       _target_: custom_models.dataset.mini_dataset.MiniDataset
       batch_size: ${scratch.train_batch_size}
-      split_type: 'over_train'
+      split_type: 'train'
       num_frames: ${scratch.num_frames}
       input_image_size: ${scratch.resolution}
       object_labels: ${scratch.obj_labels}
@@ -372,7 +374,7 @@ trainer:
     val:
       _target_: custom_models.dataset.mini_dataset.MiniDataset
       batch_size: ${scratch.train_batch_size}
-      split_type: 'over_train'
+      split_type: 'val'
       num_frames: ${scratch.num_frames}
       input_image_size: ${scratch.resolution}
       object_labels: ${scratch.obj_labels}
@@ -459,6 +461,7 @@ trainer:
         loss_dice: 5.0
         loss_class: 2.0
       eos_coef: 0.1
+      alpha: -1
       loss_weighting: log  # HEADS UP: log linear or default
       weight_soft_co: 0.1
       losses: ['labels', 'masks']
@@ -468,7 +471,7 @@ trainer:
       importance_sample_ratio: 0.75
       image_size: ${scratch.resolution}
       deep_supervision: False
-      pointwise_mask: True
+      pointwise_mask: False
     val:
       _target_: custom_models.models.sam2former.criterion.SetCriterion
       num_classes: ${scratch.num_classes}
@@ -484,6 +487,7 @@ trainer:
         # loss_iou: 1
         loss_class: 2.0
       eos_coef: 0.1
+      alpha: -1
       loss_weighting: log  # HEADS UP: log linear or default
       weight_soft_co: 0.1
       losses: ['labels', 'masks']
@@ -492,7 +496,7 @@ trainer:
       importance_sample_ratio: 0.75
       image_size: ${scratch.resolution}
       deep_supervision: False
-      pointwise_mask: True
+      pointwise_mask: False
   
   distributed:
     backend: nccl
@@ -517,7 +521,7 @@ trainer:
     # resume_from: sam2_logs/07_27_17_33/checkpoints/checkpoint_78.pt
     # resume_from: sam2_logs/08_11_16_37/checkpoints/checkpoint_28.pt
     # resume_from: sam2_logs/08_16_12_45/checkpoints/checkpoint_6.pt
-    # resume_from: sam2_logs/08_25_12_58/checkpoints/checkpoint_20.pt
+    # resume_from: sam2_logs/08_26_09_11/checkpoints/checkpoint_29.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
     save_freq: 1 # 0 only last checkpoint is saved.
     model_weight_initializer:
@@ -538,7 +542,7 @@ trainer:
         checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_03_21_22/checkpoints/checkpoint_37.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_11_16_37/checkpoints/checkpoint_28.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_13_17_25_img_model/checkpoints/checkpoint_70.pt
-        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_25_12_58/checkpoints/checkpoint_20.pt
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_26_09_11/checkpoints/checkpoint_29.pt
         ckpt_state_dict_keys: ['model']
 
 launcher:

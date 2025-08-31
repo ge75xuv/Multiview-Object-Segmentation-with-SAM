@@ -230,7 +230,8 @@ LABEL_PROJECTION_MAP = {
 
 # These are the objects that are used for epipolar projection
 OBJECTS_EPIPOLAR = [
-    0,  # 'instrument_table'
+    # 0,  # 'instrument_table'
+    2,  # 'ae'
     4,  # 'patient'
     12,  # 'drill'
     13,  # 'hammer'

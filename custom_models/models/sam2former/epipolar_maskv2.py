@@ -109,7 +109,8 @@ def single_epiline(_size: Tuple[int, int], lines: torch.Tensor, step: int = 10, 
     pts = torch.stack([x_valid, y_valid], dim=1)
     return pts, scores_valid
 
-def random_sample_mask_points(mask: torch.Tensor, n_points: int, threshold: float = 0.5) -> Optional[torch.Tensor]:
+def random_sample_mask_points(mask: torch.Tensor, n_points: int, 
+                              threshold: float = 0.5, depth_object: Optional[bool] = False) -> Optional[torch.Tensor]:
     # Handle multi-channel masks by summing across channels
     score_mask = mask.sigmoid()
     binary_mask = torch.sum(score_mask > threshold, dim=0)
@@ -121,8 +122,8 @@ def random_sample_mask_points(mask: torch.Tensor, n_points: int, threshold: floa
         return None, None
 
     # If we have fewer points than requested, return all available points
-    if len(x) <= n_points:
-        return torch.cat([x.unsqueeze(1), y.unsqueeze(1)], dim=1), score_mask[0, y, x]
+    if len(x) <= n_points or depth_object:
+        return torch.cat([x.unsqueeze(1), y.unsqueeze(1)], dim=1), score_mask[:, y, x].sum(0)
 
     # Randomly sample n_points indices
     indices = torch.randperm(len(x))[:n_points]
@@ -130,25 +131,21 @@ def random_sample_mask_points(mask: torch.Tensor, n_points: int, threshold: floa
     sampled_y = y[indices]
     coords = torch.cat([sampled_x.unsqueeze(1), sampled_y.unsqueeze(1)], dim=1)
 
-    return coords, score_mask[0, sampled_y, sampled_x]
+    return coords, score_mask[:, sampled_y, sampled_x].sum(0)
 
-@torch.no_grad()
+# @torch.no_grad()
 def epipolar_mask_preprocess(
     mask_cam0: torch.Tensor,
     mask_cam1: torch.Tensor,
     mask_cam2: torch.Tensor,
-    n_points: Optional[int] = 4096,
-    ):
+    n_points: Optional[int] = 1024,
+    depth_object: Optional[bool] = False
+):
     # Another reason for us to use temporality. It is not possible to make a differentiable masking here
     # The batch operation for different objects cannot be done here since the size of the masks are going to be varying size
-    pts_cam0, score0 = random_sample_mask_points(mask_cam0, n_points=n_points, threshold=0.5)
-    pts_cam1, score1 = random_sample_mask_points(mask_cam1, n_points=n_points, threshold=0.5)
-    pts_cam2, score2 = random_sample_mask_points(mask_cam2, n_points=n_points, threshold=0.5)
-
-    # Scores
-    # score0 = torch.sigmoid(mask_cam0[ind0]) if ind0 is not None else None
-    # score1 = torch.sigmoid(mask_cam1[ind1]) if ind1 is not None else None
-    # score2 = torch.sigmoid(mask_cam2[ind2]) if ind2 is not None else None
+    pts_cam0, score0 = random_sample_mask_points(mask_cam0, n_points=n_points, threshold=0.5, depth_object=depth_object)
+    pts_cam1, score1 = random_sample_mask_points(mask_cam1, n_points=n_points, threshold=0.5, depth_object=depth_object)
+    pts_cam2, score2 = random_sample_mask_points(mask_cam2, n_points=n_points, threshold=0.5, depth_object=depth_object)
     return pts_cam0, pts_cam1, pts_cam2, score0, score1, score2
 
 def epipolar_mask_post_process(
@@ -165,7 +162,8 @@ def epipolar_mask_post_process(
         weights = [epipolar_weight[v] for v in other_views]
         for i in range(2):  # two sets of epipolar intersections
             coords = epi_masks_for_views[view_id][i]  # [N, 2]
-            scores = score_masks_for_views[view_id][i] if score_masks_for_views is not None else 1
+            scores = score_masks_for_views[view_id][i]
+            scores = 1 if scores is None else scores
             if coords.numel() == 0:
                 continue
 
@@ -175,7 +173,7 @@ def epipolar_mask_post_process(
 
     return mask
 
-@torch.no_grad()
+# @torch.no_grad()
 def epipolar_mask(
     camera_int_ext: List[torch.Tensor],
     pts_cam0: torch.Tensor,
@@ -185,7 +183,6 @@ def epipolar_mask(
     step: int = 2,
     scores: List[torch.Tensor]=None,
     ):
-
     # Unpack camera intrinsics and extrinsics
     K0, ext0 = camera_int_ext[0]
     K1, ext1 = camera_int_ext[1]
@@ -204,6 +201,9 @@ def epipolar_mask(
 
     ext_0_to_2 = inv2 @ ext0
     ext_1_to_2 = inv2 @ ext1
+    
+    # Scores
+    scores = (None, None, None) if scores is None else scores
 
     # Compute epipolar lines
     epi_lines_1_to_0 = compute_epipolar_lines(ext_1_to_0, K0, K1, pts_cam1) if pts_cam1 is not None else None
@@ -233,12 +233,13 @@ def epipolar_mask(
         # Discriminate between the cases If both are None, skip this view
         if _check_first == False and _check_second == False:
             epi_masks_for_views[view] = torch.tensor([[]]), torch.tensor([[]])
+            score_masks_for_views[view] = torch.tensor([[]]), torch.tensor([[]])
             continue
 
         # If both lines exist, compute the intersection
         elif _check_first == True and _check_second == True:
-            intersect_point1, s1 = single_epiline(_size, _first_epi_lines, step, weights[0])
-            intersect_point2, s2 = single_epiline(_size, _second_epi_lines, step, weights[1])
+            intersect_point1, s1 = single_epiline(_size, _first_epi_lines, step=1, scores=weights[0])
+            intersect_point2, s2 = single_epiline(_size, _second_epi_lines, step=1, scores=weights[1])
             epi_masks_for_views[view] = intersect_point1, intersect_point2
             score_masks_for_views[view] = s1, s2
 
@@ -285,7 +286,7 @@ def epipolar_mask(
             raise RuntimeError("Unexpected case")
     return epi_masks_for_views, score_masks_for_views
 
-@torch.no_grad()
+# @torch.no_grad()
 def epipolar_main(camera_int_ext: List[torch.Tensor],
                   predictions0: Dict[str, torch.Tensor],
                   predictions1: Dict[str, torch.Tensor],
@@ -348,7 +349,7 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
         mask_cam2 = predictions2['pred_masks_high_res'][pos_obj2]  # instances of the same object.
 
         # Preprocess the masks to get points
-        pts_cam0, pts_cam1, pts_cam2, s0, s1, s2 = epipolar_mask_preprocess(mask_cam0, mask_cam1, mask_cam2, n_points=n_points)
+        pts_cam0, pts_cam1, pts_cam2, s0, s1, s2 = epipolar_mask_preprocess(mask_cam0, mask_cam1, mask_cam2, n_points=n_points, depth_object=depth_object)
 
         # Technically we dont need to check if the points are None, since the epipolar mask function will handle it
         # But we do it here to avoid unnecessary computation if the points are not available
@@ -358,18 +359,21 @@ def epipolar_main(camera_int_ext: List[torch.Tensor],
 
         if depth_object:
             # Point cloud projection wrapper
-            epi_mask_for_views = point_cloud_mask(camera_int_ext, pts_cam0, pts_cam1, pts_cam2, depth_images, mask_cam0.shape[-2:])
+            epi_mask_for_views, score_masks_for_views = point_cloud_mask(camera_int_ext, pts_cam0, pts_cam1, pts_cam2, depth_images, mask_cam0.shape[-2:], scores=[s0, s1, s2])
         else:
             # Run the epipolar mask function
             epi_mask_for_views, score_masks_for_views = epipolar_mask(camera_int_ext, pts_cam0, pts_cam1, pts_cam2, 
                                                mask_cam0.shape[-2:], step=step, scores=[s0, s1, s2])
+
+        # Assert
+        assert len(epi_mask_for_views) == 3, "Epipolar mask for views should have 3 entries"
+        assert len(score_masks_for_views) == 3, "Score mask for views should have 3 entries"
 
         # Find the prob of that object
         prob_obj0 = pred_logits0[pos_obj0].max()  if pos_obj0[0].numel() > 0 else 0.0
         prob_obj1 = pred_logits1[pos_obj1].max()  if pos_obj1[0].numel() > 0 else 0.0
         prob_obj2 = pred_logits2[pos_obj2].max()  if pos_obj2[0].numel() > 0 else 0.0
 
-        score_masks_for_views = None  # TODO make it work after
         # Epipolar mask post processing
         mask = epipolar_mask_post_process(epi_mask_for_views, mask_cam0.shape[-2:], 
                                           [prob_obj0, prob_obj1, prob_obj2], score_masks_for_views, device)

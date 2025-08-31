@@ -356,7 +356,7 @@ class MiniDataset(Dataset):
             num_workers=self.num_workers,
             persistent_workers=False,
             pin_memory=False,
-            prefetch_factor=1,
+            prefetch_factor=1 if self.num_workers > 0 else None,
             multiprocessing_context='spawn',
         )
 

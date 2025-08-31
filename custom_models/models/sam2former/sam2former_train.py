@@ -37,6 +37,7 @@ class SAM2FormerTrain(SAM2FormerBase):
         epipolar_encoder=None,
         epipolar_attention=None,
         query_epipolar_fusion=None,
+        run_first_no_grad=True,
         flag_epipolar_attn_bias=False,
         source_target_reliability=None,
         view_spatial_prior=None,
@@ -137,6 +138,7 @@ class SAM2FormerTrain(SAM2FormerBase):
             "Invalid configuration: `flag_epipolar_attn_bias` can only be True if `multiview` is also True.")
 
         if self.multiview:
+            self.run_first_no_grad = run_first_no_grad
             # Source-Target Pair Reliability
             self.source_target_reliability = source_target_reliability
             # ViewSpatialPrior
@@ -307,7 +309,7 @@ class SAM2FormerTrain(SAM2FormerBase):
                 #TODO Inject the Film Layer here, we need the view idx
 
                 # Get output masks based on this frame's prompts and previous memory. Depending on the last decoding or not, apply the appropriate context.
-                ctx = torch.no_grad() if self.multiview else nullcontext()
+                ctx = torch.no_grad() if self.multiview and self.run_first_no_grad else nullcontext()
                 with ctx:
                     current_out = self.track_step(
                             frame_idx=stage_id,
@@ -349,11 +351,10 @@ class SAM2FormerTrain(SAM2FormerBase):
                                                                  self.sam_mask_decoder.predictor.num_queries,
                                                                  depth_images=stage_depth_images)
                 epipolar_masks = epipolar_masks.to(self.device)
-                # SourceTargetReliability
-                epipolar_masks = self.source_target_reliability(epipolar_masks)
-
                 # If we are using the epipolars as attention bias
                 if self.flag_epipolar_attn_bias:
+                    # SourceTargetReliability
+                    epipolar_masks = self.source_target_reliability(epipolar_masks)
                     # ViewSpatialPrior
                     view_spatial_prior = self.view_spatial_prior([0,1,2], *epipolar_masks.shape[-2:])
                     # ReliabilityAndBias
@@ -385,14 +386,15 @@ class SAM2FormerTrain(SAM2FormerBase):
 
                 else:
                     # Scale the epipolar masks and add bias (Use the same scale and bias as in the memory encoder)
-                    pseudo_masks = epipolar_masks.sigmoid() * self.sigmoid_scale_for_mem_enc 
-                    pseudo_masks = pseudo_masks.sum(2) + self.sigmoid_bias_for_mem_enc
+                    pseudo_masks = epipolar_masks.sum(2)  # The scores are already after sigmoid (see. epipolar preprocess scores)
+                    pseudo_masks = pseudo_masks * self.sigmoid_scale_for_mem_enc + self.sigmoid_bias_for_mem_enc
                     pix_feat = torch.vstack(list(feature_container_for_multiview_fusion.values()))
                     # NOTE pix_feats = (3, 256, 16, 16), pseudo_masks = (O, 3, H, W)
                     # NOTE pix_feat_for_mem = (1, 256, 16, 16) mask_for_mem = (23, 1, 256, 256)
                     # Encode the epipolar features
                     for view_idx in range(3):
-                        encoded_epipolars = self.epipolar_encoder(pix_feat[view_idx:view_idx+1], pseudo_masks[:,view_idx:view_idx+1])
+                        encoded_epipolars = self.epipolar_encoder(pix_feat[view_idx:view_idx+1], pseudo_masks[:,view_idx:view_idx+1],
+                                                                  skip_mask_sigmoid=True)
                         # dictionary with keys "vision_features" and "vision_pos_enc"
                         encoded_epipolars['object_positions_labels'] = object_pos_label[view_idx]
                         encoded_epipolar_dict[view_idx] = encoded_epipolars
