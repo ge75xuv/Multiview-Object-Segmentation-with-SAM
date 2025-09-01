@@ -18,19 +18,16 @@ from custom_models.helpers.load_depth_image import load_depth_image
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
-class MiniDataset(Dataset):
+class MiniDatasetVGGT(Dataset):
     
     def __init__(self,
                  split_type:str,
                  num_frames:int,
                  input_image_size:int,
                  object_labels: List[int],
-                 transforms,
                  collate_fn,
                  label_projection_type:str='default',
                  multiview:bool=False,
-                 depth_image:bool=False,
-                 vggt_dataset:bool=False,
                  batch_size:int=1,
                  num_workers:int=0,
                  **kwargs):
@@ -45,13 +42,11 @@ class MiniDataset(Dataset):
         super().__init__()
         # Arguments
         self.multiview = multiview
-        self.depth_image = depth_image
         self.num_frames = num_frames
         self.batch_size = batch_size
         self.num_workers= num_workers
         self.collate_fn=collate_fn
         self.input_image_size = input_image_size
-        self.transforms_ = transforms
         self.object_labels = list(set(object_labels))  # Get rid of the repeating values if they exist
         true_labels = [obj['label'] for obj in iter(TRACK_TO_METAINFO.values())]
         assert all([obj in true_labels for obj in object_labels]), 'Unidentified key in the obj labels'
@@ -61,16 +56,11 @@ class MiniDataset(Dataset):
 
         # Initialize image resizer
         original_image_size = (1536, 2048)  # (H,W) #NOTE the images are not always the same, azure and simstation have different sizes
-        if vggt_dataset:
-            assert input_image_size % 14 == 0, 'Input image size must be a multiple of 14 for VGGT dataset'
-            short_edge = input_image_size * original_image_size[0] / original_image_size[1]
-            short_edge = int(14 * np.round(short_edge/14.0))
-            resize_shape = [short_edge, input_image_size]
-            self.resize_image = Resize(resize_shape)
-        else:
-            scaling_factor = original_image_size[1] // input_image_size  # Depends on the long edge, short will be padded.
-            resize_shape = [original_image_size[0] // scaling_factor, input_image_size]
-            self.resize_image = Resize(resize_shape)
+        assert input_image_size % 14 == 0, 'Input image size must be a multiple of 14 for VGGT dataset'
+        short_edge = input_image_size * original_image_size[0] / original_image_size[1]
+        short_edge = int(14 * np.round(short_edge/14.0))
+        resize_shape = [short_edge, input_image_size]
+        self.resize_image = Resize(resize_shape)
 
         # Initialize image transforms
         self.to_tensor = ToTensor()
@@ -127,35 +117,6 @@ class MiniDataset(Dataset):
                         take_images[c_idx].append(rgb_path)
                         take_seg_masks[c_idx].append(interpolated_mask_path)
 
-                # assume azure is not available, use simstation instead
-                # NOTE Multiview is experimental and tested with azure cameras only
-                if len(take_seg_masks[1]) == 0 and not self.multiview:
-                    assert flag_simstation, "The azure file should not exist!"
-                    assert len(take_seg_masks[1]) + len(take_seg_masks[4]) + len(take_seg_masks[5]) == 0, "Azure images from eah camera should not exist!"
-                    for c_idx in [0, 2, 3]:
-                        simstation_rgb_path = take_path / 'simstation' / f'camera0{c_idx}_{image_files["simstation"]}.jpg'
-                        simstation_mask_path = take_path / f'simstation_segmentation_export_{c_idx}' / f'{simstation_rgb_path.stem}.png'
-                        simstation_interpolated_mask_path = take_path / f'simstation_segmentation_export_{c_idx}' / f'{simstation_rgb_path.stem}_interpolated.png'
-                        if simstation_mask_path.exists():
-                            take_images[c_idx].append(simstation_rgb_path)
-                            take_seg_masks[c_idx].append(simstation_mask_path)
-                        elif simstation_interpolated_mask_path.exists() and include_interpolated:
-                            take_images[c_idx].append(simstation_rgb_path)
-                            take_seg_masks[c_idx].append(simstation_interpolated_mask_path)
-
-            if self.multiview and flag_simstation:
-                continue
-            if self.multiview and not flag_simstation and not vggt_dataset:
-                camera_files = ['camera01.json', 'camera04.json', 'camera05.json']
-                # camera_files = [f'camera0{c_idx}.json' for c_idx in [1, 4, 5]] if flag_simstation else [f'camera0{c_idx}.json' for c_idx in [0, 2, 3]]
-                camera_int_ext = []
-                for json_file in camera_files:
-                    with open(os.path.join(take_path, json_file), 'r') as f:
-                        camera_data = json.load(f)
-                    intr, ext, padding, dist, depth_ext = load_camera_data(camera_data, scaling_factor)
-                    camera_int_ext.append((intr, ext))
-                    self.camera_features[take_folder] = camera_int_ext
-
             # For multiview we get only the mutual timestamps
             if self.multiview:
                 time_ids = {k: [str(path).split('/')[-1].split('_')[1].split('.')[0] for path in take_images[k]] for k in take_images.keys()}
@@ -211,26 +172,6 @@ class MiniDataset(Dataset):
             self.images = self.images + take_video
             self.segmentation_masks = self.segmentation_masks + take_video_seg_mask
 
-        if split_type == 'over_train' and False:
-            cam_switch = len(self.images) // 3 // num_frames
-            start_idx = 2700 // num_frames
-            end_idx = 2900 // num_frames
-            # idx_range_free = [i for i in range(1900, 2100)]
-            idx_range_free = []
-            idx_range_cam1 = [i for i in range(start_idx, end_idx)]
-            idx_range_cam4 = [ii for ii in range(start_idx + cam_switch, end_idx + cam_switch)]
-            idx_range = idx_range_free + idx_range_cam1 + idx_range_cam4
-            self.images = [self.images[i] for i in idx_range]
-            self.segmentation_masks = [self.segmentation_masks[i] for i in idx_range]
-        elif split_type == 'over_train2' and False:
-            start_idx_13 = 4804
-            end_idx_13 = 4904
-            idx_range_cam1 = [i for i in range(start_idx_13, end_idx_13)]
-            idx_range_cam4 = [4441, 4442, 4443, 4444, 4445, 4448, 4449, 4452, 4453, 4454, 4455, 4474, 4475, 4476, 4477, 4478, 4484, 4716, 4717, 4718, 4722, 4732, 4733, 4738, 4739, 4740, 4741] 
-            idx_range = idx_range_cam1 + idx_range_cam4
-            self.images = [self.images[i] for i in idx_range]
-            self.segmentation_masks = [self.segmentation_masks[i] for i in idx_range]
-
         del take_video
         del take_video_seg_mask
         del take_images
@@ -239,36 +180,13 @@ class MiniDataset(Dataset):
         self.images = list(self.images)
         self.segmentation_masks = list(self.segmentation_masks)
 
-        # Python multiprocessing manager
-        # This is a workaround for the multiprocessing issue with PyTorch
-        # manager = Manager()
-        # self.images = manager.list(self.images)
-        # self.segmentation_masks = manager.list(self.segmentation_masks)
-
-        # Convert the list into a numpy array
-        # self.images = np.array(self.images)
-        # self.segmentation_masks = np.array(self.segmentation_masks)
-
-        # TODO DELETE AFTER
-        self.small_onject_refinement = False
-        if split_type == 'train' and self.small_onject_refinement:
-            self.split_type = split_type
-            with open('./temp/train_13_15_no_interp.json', 'r') as f:
-                self.indeces = json.load(f)["train_13_15"]
-        else:
-            self.indeces = [i for i in range(len(self.images))]
-            self.split_type = split_type
-
     def __len__(self):
-        # if self.split_type == 'train' and self.small_onject_refinement:  # TODO DELETE AFTER
-        #     return len(self.indeces)
         if self.multiview:
             return len(self.segmentation_masks) // 3
         return len(self.segmentation_masks)
 
     def __getitem__(self, index):
         # Get file paths
-        # index = self.indeces[index] if self.small_onject_refinement else index  # TODO DELETE AFTER
         indeces = index * 3 + np.array([0, 1, 2]) if self.multiview else [index]
         img_view_container = []
         take_name = str(self.images[indeces[0]][0]).split('/')[-3]  # View Index:0 Frame Index:0
@@ -284,22 +202,10 @@ class MiniDataset(Dataset):
             size_x_y = frame_obj_list[0].data.shape[-2:]
             video_datapoint = VideoDatapoint(frame_obj_list, index, size_x_y)
 
-            # Apply transforms
-            for transform in self.transforms_:
-                video_datapoint = transform(video_datapoint)
-
             # Append the video datapoint to the container
             img_view_container.append(video_datapoint)
 
-            if self.depth_image:
-                depth_images = load_depth_image(video_frames, size_x_y)
-                depth_images_all_views.append(depth_images)
-
-        if not self.multiview:
-            return img_view_container[0]
-        elif self.depth_image:
-            return img_view_container, self.camera_features[take_name], depth_images_all_views
-        return img_view_container, self.camera_features[take_name]
+        return img_view_container, None  # None is for the collate_fn to have a unified object for Sam2Former and VggtFormer
 
     def _open_and_process(self, video_frames, video_frames_segmentation_mask):
         frame_obj_list = []
@@ -365,14 +271,8 @@ class MiniDataset(Dataset):
             persistent_workers=False,
             pin_memory=False,
             prefetch_factor=1 if self.num_workers > 0 else None,
-            multiprocessing_context='spawn',
+            multiprocessing_context='spawn' if self.num_workers > 0 else None,
         )
 
     def load_checkpoint_state(*args, **kwargs):
         pass
-
-
-if __name__ == '__main__':
-    md = MiniDataset("small_train")
-    print(len(md))
-    print(md[6700])

@@ -44,6 +44,11 @@ class LinearParamScheduler(ParamScheduler):
             return self._end_value
         return self._end_value * where + self._start_value * (1 - where)
 
+def load_state_dict_into_model_vggt(state_dict, model, *args, **kwargs):
+    state_dict = {k: v for k, v in state_dict.items() if k.startswith('aggregator') or k.startswith('depth')}
+    missing_keys, unexpected_keys = model.load_state_dict(state_dict)
+    return model
+
 # training overrides
 def load_state_dict_into_model(
     state_dict: Dict,
