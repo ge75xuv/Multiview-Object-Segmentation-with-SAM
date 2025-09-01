@@ -8,6 +8,8 @@ import torch
 import torch.nn as nn
 from huggingface_hub import PyTorchModelHubMixin  # used for model hub
 
+from custom_models.dataset.collate_fn import MultiviewBatchedVideoDatapoint
+
 from vggt.models.aggregator import Aggregator
 from vggt.heads.camera_head import CameraHead
 from vggt.heads.dpt_head import DPTHead
@@ -17,21 +19,23 @@ from vggt.heads.track_head import TrackHead
 class VGGT(nn.Module, PyTorchModelHubMixin):
     def __init__(self, img_size=518, patch_size=14, embed_dim=1024,
                  enable_camera=False, enable_point=False, enable_depth=True, enable_track=False, 
-                 mask_decoder_cfg=None, freeze_backbone=True):
+                 mask_decoder_cfg=None, freeze_backbone=True, num_classes=23):
         super().__init__()
 
         self.aggregator = Aggregator(img_size=img_size, patch_size=patch_size, embed_dim=embed_dim)
         self.camera_head = CameraHead(dim_in=2 * embed_dim) if enable_camera else None
         self.point_head = DPTHead(dim_in=2 * embed_dim, output_dim=4, activation="inv_log", conf_activation="expp1") if enable_point else None
-        self.depth_head = DPTHead(dim_in=2 * embed_dim, output_dim=2, activation="exp", conf_activation="expp1") if enable_depth else None
+        self.depth_head = DPTHead(dim_in=2 * embed_dim, output_dim=num_classes+1, activation="exp", conf_activation="expp1") if enable_depth else None
         self.track_head = TrackHead(dim_in=2 * embed_dim, patch_size=patch_size) if enable_track else None
+        # Depth head is num_classes+1 because the model uses the last one for the confidence estimation,
+        # even though we dont need it, this is the way to have a minimal invasion
 
         # Freeze the backbone
         if freeze_backbone:
             for param in self.aggregator.parameters():
                 param.requires_grad = False
 
-    def forward(self, images: torch.Tensor, query_points: torch.Tensor = None):
+    def forward(self, input_batch: MultiviewBatchedVideoDatapoint, query_points: torch.Tensor = None):
         """
         Forward pass of the VGGT model.
 
@@ -55,7 +59,12 @@ class VGGT(nn.Module, PyTorchModelHubMixin):
                 - track (torch.Tensor): Point tracks with shape [B, S, N, 2] (from the last iteration), in pixel coordinates
                 - vis (torch.Tensor): Visibility scores for tracked points with shape [B, S, N]
                 - conf (torch.Tensor): Confidence scores for tracked points with shape [B, S, N]
-        """        
+        """
+        # Reshape the input data batch to an image tensor
+        img_list = []
+        for i in range(3):
+            img_list.append(input_batch[i].img_batch)
+        images = torch.concatenate(img_list, dim=1)
         # If without batch dimension, add it
         if len(images.shape) == 4:
             images = images.unsqueeze(0)
@@ -72,13 +81,12 @@ class VGGT(nn.Module, PyTorchModelHubMixin):
                 pose_enc_list = self.camera_head(aggregated_tokens_list)
                 predictions["pose_enc"] = pose_enc_list[-1]  # pose encoding of the last iteration
                 predictions["pose_enc_list"] = pose_enc_list
-                
+
             if self.depth_head is not None:
-                depth, depth_conf = self.depth_head(
+                depth, _ = self.depth_head(
                     aggregated_tokens_list, images=images, patch_start_idx=patch_start_idx
                 )
-                predictions["depth"] = depth
-                predictions["depth_conf"] = depth_conf
+                predictions["pred_masks_high_res"] = depth.permute(0,1,4,2,3)  # The predictions has to come forward
 
             if self.point_head is not None and False:
                 pts3d, pts3d_conf = self.point_head(

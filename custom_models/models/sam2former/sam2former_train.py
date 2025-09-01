@@ -386,7 +386,7 @@ class SAM2FormerTrain(SAM2FormerBase):
 
                 else:
                     # Scale the epipolar masks and add bias (Use the same scale and bias as in the memory encoder)
-                    pseudo_masks = epipolar_masks.sum(2)  # The scores are already after sigmoid (see. epipolar preprocess scores)
+                    pseudo_masks = epipolar_masks.sum(2) / 2  # The scores are already after sigmoid (see. epipolar preprocess scores)
                     pseudo_masks = pseudo_masks * self.sigmoid_scale_for_mem_enc + self.sigmoid_bias_for_mem_enc
                     pix_feat = torch.vstack(list(feature_container_for_multiview_fusion.values()))
                     # NOTE pix_feats = (3, 256, 16, 16), pseudo_masks = (O, 3, H, W)

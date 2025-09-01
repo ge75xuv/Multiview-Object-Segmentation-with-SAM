@@ -506,10 +506,13 @@ class Trainer:
                         "masks": batch[view_idx].masks[xx, yy],
                         "labels": obj_id,
                     })
+            # Targets has the shape [view0_frame0, view0_frame1, view1_frame0, view1_frame1, view2_frame0, ...]
             consensus_aux_loss = outputs.pop('L_consensus', None)
             # Modify the outputs shape to match the targets
-            # outputs = {0: {0:, 1:, 2:, ...}, 1: {0:, 1:, 2:, ...}, 2: {0:, 1:, 2:, ...}} -> {0: , 1:, 2:, ...}
-            outputs = {view_idx*batch_size + stage_id: outputs[view_idx][stage_id] for view_idx in outputs for stage_id in outputs[view_idx]}
+            if not len(outputs.keys()) == 1:
+                # Make the output have the same shape as the target
+                # outputs = {0: {0:, 1:, 2:, ...}, 1: {0:, 1:, 2:, ...}, 2: {0:, 1:, 2:, ...}} -> {0:, 1:, 2:, 3:, 4:, 5:, ...}
+                outputs = {view_idx*batch_size + stage_id: outputs[view_idx][stage_id] for view_idx in outputs for stage_id in outputs[view_idx]}
 
         # Calculate the loss
         loss = self.loss[key](outputs, targets)

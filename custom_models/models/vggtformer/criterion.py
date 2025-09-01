@@ -1,0 +1,443 @@
+# Copyright (c) Facebook, Inc. and its affiliates.
+# Modified by Bowen Cheng from https://github.com/facebookresearch/detr/blob/master/models/detr.py
+"""
+MaskFormer criterion.
+"""
+import math
+import statistics
+from pathlib import Path
+import yaml
+
+import torch
+import torch.nn.functional as F
+from torch import nn
+from torchvision.transforms import Resize
+
+from ..sam2former.lib import get_world_size, point_sample, get_uncertain_point_coords_with_randomness, sample_from_obj_id
+from custom_models.helpers.configurations import OBJECT_FREQUENCY_PATH
+from ..sam2former.utils.misc import is_dist_avail_and_initialized, nested_tensor_from_tensor_list
+
+
+def sigmoid_focal_loss(inputs, targets, num_masks:float, alpha: float=0.25, gamma: float=2, red_sum: bool=True):
+    """
+    Loss used in RetinaNet for dense detection: https://arxiv.org/abs/1708.02002.
+    Args:
+        inputs: A float tensor of arbitrary shape.
+                The predictions for each example.
+        targets: A float tensor with the same shape as inputs. Stores the binary
+                 classification label for each element in inputs
+                (0 for the negative class and 1 for the positive class).
+        alpha: (optional) Weighting factor in range (0,1) to balance
+                positive vs negative examples. Default = -1 (no weighting).
+        gamma: Exponent of the modulating factor (1 - p_t) to
+               balance easy vs hard examples.
+    Returns:
+        Loss tensor
+    """
+    prob = inputs.sigmoid()
+    ce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
+    p_t = prob * targets + (1 - prob) * (1 - targets)
+    loss = ce_loss * ((1 - p_t) ** gamma)
+
+    if alpha >= 0:
+        alpha_t = alpha * targets + (1 - alpha) * (1 - targets)
+        loss = alpha_t * loss
+    if isinstance(alpha, torch.Tensor):
+        # expects shape [C], broadcast across batch & spatial dims
+        # reshape to [1, C, 1, 1,...] for broadcasting
+        view_shape = [1, -1] + [1] * (loss.ndim - 2)
+        alpha = alpha.view(*view_shape).to(loss.device, loss.dtype)
+        alpha_t = alpha * targets + (1 - alpha) * (1 - targets)
+        loss = alpha_t * loss
+
+    return loss.mean(1).sum() / num_masks
+
+sigmoid_focal_loss_jit = torch.jit.script(
+    sigmoid_focal_loss
+)  # type: torch.jit.ScriptModule
+
+def sigmoid_ce_loss(
+        inputs: torch.Tensor,
+        targets: torch.Tensor,
+        num_masks: float,
+    ):
+    """
+    Args:
+        inputs: A float tensor of arbitrary shape.
+                The predictions for each example.
+        targets: A float tensor with the same shape as inputs. Stores the binary
+                 classification label for each element in inputs
+                (0 for the negative class and 1 for the positive class).
+    Returns:
+        Loss tensor
+    """
+    loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
+
+    return loss.mean(1).sum() / num_masks
+
+
+sigmoid_ce_loss_jit = torch.jit.script(
+    sigmoid_ce_loss
+)  # type: torch.jit.ScriptModule
+
+def dice_loss(
+        inputs: torch.Tensor,
+        targets: torch.Tensor,
+        num_masks: float,
+    ):
+    """
+    Compute the DICE loss, similar to generalized IOU for masks
+    Args:
+        inputs: A float tensor of arbitrary shape.
+                The predictions for each example.
+        targets: A float tensor with the same shape as inputs. Stores the binary
+                 classification label for each element in inputs
+                (0 for the negative class and 1 for the positive class).
+    """
+    inputs = inputs.sigmoid()
+    inputs = inputs.flatten(1)
+    numerator = 2 * (inputs * targets).sum(-1)
+    denominator = inputs.sum(-1) + targets.sum(-1)
+    loss = 1 - (numerator + 1) / (denominator + 1)
+    return loss.sum() / num_masks
+
+
+dice_loss_jit = torch.jit.script(
+    dice_loss
+)  # type: torch.jit.ScriptModule
+
+
+def calculate_uncertainty(logits):
+    """
+    We estimate uncerainty as L1 distance between 0.0 and the logit prediction in 'logits' for the
+        foreground class in `classes`.
+    Args:
+        logits (Tensor): A tensor of shape (R, 1, ...) for class-specific or
+            class-agnostic, where R is the total number of predicted masks in all images and C is
+            the number of foreground classes. The values are logits.
+    Returns:
+        scores (Tensor): A tensor of shape (R, 1, ...) that contains uncertainty scores with
+            the most uncertain locations having the highest uncertainty score.
+    """
+    assert logits.shape[1] == 1
+    gt_class_logits = logits.clone()
+    return -(torch.abs(gt_class_logits))
+
+def filter_absent_targets(t):
+    # t["masks"]: [N, H, W], t["labels"]: [N]
+    present = (t["masks"].flatten(1).sum(dim=1) > 0)  # True if mask has any 1s
+    return {
+        "labels": t["labels"][present],
+        "masks":  t["masks"][present],
+    }
+
+class SetCriterion(nn.Module):
+    """This class computes the loss for DETR.
+    The process happens in two steps:
+        1) we compute hungarian assignment between ground truth boxes and the outputs of the model
+        2) we supervise each pair of matched ground-truth / prediction (supervise class and box)
+    """
+
+    def __init__(self, num_classes, weight_dict, eos_coef, losses,
+                 num_points, oversample_ratio, importance_sample_ratio, image_size=512,
+                 loss_weighting='default', deep_supervision=True, pointwise_mask=True, obj_ids_extra_sampling=None,
+                 alpha=0.2):
+        """Create the criterion.
+        Parameters:
+            num_classes: number of object categories, omitting the special no-object category
+            matcher: module able to compute a matching between targets and proposals
+            weight_dict: dict containing as key the names of the losses and as values their relative weight.
+            eos_coef: relative classification weight applied to the no-object category
+            losses: list of all the losses to be applied. See get_loss for list of available losses.
+        """
+        super().__init__()
+        self.num_classes = num_classes
+        self.weight_dict = weight_dict
+        self.eos_coef = eos_coef
+        self.losses = losses
+        empty_weight = torch.ones(self.num_classes + 1)
+        empty_weight[-1] = self.eos_coef
+        self.alpha = alpha
+        self.obj_ids_extra_sampling = obj_ids_extra_sampling if obj_ids_extra_sampling is not None else [2, 12, 13, 14]
+
+        # Weights for object classes
+        frequency_file_path = OBJECT_FREQUENCY_PATH
+        if frequency_file_path.exists() and loss_weighting != 'default':
+            print('Frequency file exists. Using weights from frequency file')
+            label_frequency_type = 'human_labels' if num_classes == 16 else 'all_labels'  #TODO: HARDCODED PUT IT TO THE CONFIG
+            with open(frequency_file_path, 'r') as f:
+                class_freqs = yaml.safe_load(f)[label_frequency_type]
+            weight_scales = {k: v[1] if len(v) == 2 else 1 for k, v in class_freqs.items()}
+            class_freqs = {k: v[0] for k, v in class_freqs.items()}
+
+            # The original dataset has 6 different human labels, but we want to treat them as one class
+            # for the loss calculation, so we sum their frequencies and take the mean of their weight scales
+            if label_frequency_type == 'human_labels':
+                human_freqs = sum([freq for k, freq in class_freqs.items() if k[0] == '6'])
+                human_weight_scale = statistics.mean([wg for k, wg in weight_scales.items() if k[0] == '6'])
+                class_freqs = {k: v for k, v in class_freqs.items() if k[0] != '6'}
+                weight_scales = {k: v for k, v in weight_scales.items() if k[0] != '6'}
+                class_freqs['6'] = human_freqs; weight_scales['6'] = human_weight_scale
+
+            # Normalize the frequencies
+            min_freq = min(v for v in class_freqs.values() if v != 0)
+            normalized_freqs = {k: v / min_freq if v != 0 else 0 for k, v in class_freqs.items()}
+            if loss_weighting == 'linear':
+                print('Using linear loss weighting...')
+                # inverse linear weighting
+                class_weights = {k: 1 / v if v != 0 else 0.0 for k, v in normalized_freqs.items()}
+            elif loss_weighting == 'log':
+                print('Using log loss weighting...')
+                # inverse log weighting
+                class_weights = {int(k): 1 / math.log(v + 1) if v != 0 else 0.0 for k, v in normalized_freqs.items()}
+            for key in class_weights:
+                    empty_weight[key] = class_weights[key] * weight_scales[f'{key}']
+        else:
+            assert loss_weighting == 'default', "Weighting type is given even though the file does not exist."
+            print('Using default weights')       
+        self.register_buffer("empty_weight", empty_weight)
+
+        # pointwise mask loss parameters
+        self.num_points = num_points
+        self.oversample_ratio = oversample_ratio
+        self.importance_sample_ratio = importance_sample_ratio
+
+        # HEADS UP extra
+        self.deep_supervision = deep_supervision
+        self.pointwise_mask = pointwise_mask
+        if not pointwise_mask:
+            downsize = (128, 128) if image_size == 512 else (64, 64)
+            self.resize_target_ = Resize(downsize)
+    
+    def loss_masks(self, outputs, targets, indices, num_masks):
+        """Compute the losses related to the masks: the focal loss and the dice loss.
+        targets dicts must contain the key "masks" containing a tensor of dim [nb_target_boxes, h, w]
+        """
+        assert "pred_masks_high_res" in outputs
+
+        src_idx = self._get_src_permutation_idx(indices)
+        tgt_idx = self._get_tgt_permutation_idx(indices)
+        src_masks = outputs["pred_masks_high_res"] if not self.pointwise_mask else outputs["pred_masks"]
+        if src_masks.dim() == 5:
+            src_masks = src_masks.flatten(0, 1)  # (B, N, H, W) -> (B*N, H, W)
+        src_masks = src_masks[src_idx]
+        masks = [t["masks"] for t in targets]
+        # TODO use valid to mask invalid areas due to padding in loss
+        target_masks, valid = nested_tensor_from_tensor_list(masks).decompose()
+        target_masks = target_masks.to(src_masks)
+        target_masks = target_masks[tgt_idx]
+
+        # No need to upsample predictions as we are using normalized coordinates :)
+        # N x 1 x H x W
+        src_masks = src_masks[:, None]
+        target_masks = target_masks[:, None]
+
+        if not self.pointwise_mask:
+            # target_masks_down = self.resize_target_(target_masks).flatten(1)
+            target_masks = target_masks.flatten(1)
+            src_masks = src_masks.flatten(1)
+            # alpha_vec = self.empty_weight[tgt_idx[1]].to(src_masks.device)[:,None]
+            losses = {
+            # "loss_mask": sigmoid_ce_loss_jit(src_masks, target_masks_down, num_masks),
+            "loss_mask": sigmoid_focal_loss_jit(src_masks, target_masks, num_masks, alpha=self.alpha),
+            "loss_dice": dice_loss_jit(src_masks, target_masks, num_masks),
+        }
+            del src_masks
+            del target_masks
+            return losses
+        elif False:
+            with torch.no_grad():
+                want_per_class = max(1, self.num_points // 16)  # your per-class budget
+                # choose how many extras you want: 4/16 of self.num_points
+                extra_points = max(1, want_per_class * len(self.obj_ids_extra_sampling))  # = 25% of num_points
+                total_points = self.num_points + extra_points
+                # 1) Sample a fixed base set of size total_points (same on all ranks)
+                point_coords = get_uncertain_point_coords_with_randomness(
+                    src_masks,
+                    lambda logits: calculate_uncertainty(logits),
+                    total_points,
+                    self.oversample_ratio,
+                    self.importance_sample_ratio,
+                )  # [N, total_points, 2]
+                # 2) Gather up to `extra_points` class-biased points
+                # We'll try to pull per-class chunks, but cap to extra_points overall.
+                class_ids = self.obj_ids_extra_sampling
+                biased = point_coords.new_empty(point_coords.shape[0], 0, 2)
+                for obj_id in class_ids:
+                    cand = sample_from_obj_id(
+                        target_labels, target_masks, obj_id, point_coords, want_per_class
+                    )
+                    # `cand` is expected to append points; we only want the newly added tail
+                    newly_added = cand.shape[1] - point_coords.shape[1]
+                    if newly_added > 0:
+                        biased_tail = cand[:, -newly_added:, :]                 # take only the new ones
+                        biased = torch.cat([biased, biased_tail], dim=1)        # accumulate
+                        point_coords = cand                                     # advance the base
+                    # stop if we already gathered enough biased points
+                    if biased.shape[1] >= extra_points:
+                        break
+                # 3) Ensure exactly `total_points`: fill last `extra_points` slots with biased points if available
+                N, P, _ = point_coords.shape
+                assert P >= total_points  # should hold because we appended along the way
+                # Take the first total_points as our base slice
+                point_coords = point_coords[:, :total_points, :]
+                # Now overwrite the last extra_points with as many biased as we have (pad if fewer)
+                have = min(biased.shape[1], extra_points)
+                if have > 0:
+                    point_coords[:, -have:, :] = biased[:, :have, :]
+                # if have < extra_points, the remaining tail stays as the original random points
+                # 4) Sample labels/logits at those coords (shapes are fixed across ranks)
+                point_labels = point_sample(
+                    target_masks,
+                    point_coords,
+                    align_corners=False,
+                ).squeeze(1)   # [N, total_points]
+
+            point_logits = point_sample(
+                src_masks,
+                point_coords,
+                align_corners=False,
+            ).squeeze(1)
+
+            # (optional sanity)
+            assert point_logits.shape == point_labels.shape
+
+            losses = {
+                "loss_mask": sigmoid_ce_loss_jit(point_logits, point_labels, num_masks),
+                "loss_dice": dice_loss_jit(point_logits, point_labels, num_masks),
+            }
+
+            del src_masks
+            del target_masks
+            return losses
+
+    def _get_src_permutation_idx(self, indices):
+        # permute predictions following indices
+        batch_idx = torch.cat([torch.full_like(src, i) for i, (src, _) in enumerate(indices)])
+        src_idx = torch.cat([src for (src, _) in indices])
+        return batch_idx, src_idx
+
+    def _get_tgt_permutation_idx(self, indices):
+        # permute targets following indices
+        batch_idx = torch.cat([torch.full_like(tgt, i) for i, (_, tgt) in enumerate(indices)])
+        tgt_idx = torch.cat([tgt for (_, tgt) in indices])
+        return batch_idx, tgt_idx
+
+    def get_loss(self, loss, outputs, targets, indices, num_masks):
+        loss_map = {
+            'masks': self.loss_masks,
+        }
+        assert loss in loss_map, f"do you really want to compute {loss} loss?"
+        return loss_map[loss](outputs, targets, indices, num_masks)
+
+    def forward(self, all_outputs, targets):
+        """This performs the loss computation.
+        Parameters:
+             outputs: dict of tensors, see the output specification of the model for the format
+             targets: list of dicts, such that len(targets) == batch_size.
+                      The expected keys in each dict depends on the losses applied, see each loss' doc
+        """
+        num_frames = all_outputs['pred_masks_high_res'].shape[0]  # consecutive multiframes
+        batch_size = all_outputs['pred_masks_high_res'].shape[1]  # 3 views
+        assert num_frames * batch_size == len(targets)
+        outputs = all_outputs
+        # Target is ordered as view0_frame0, view0_frame1, view0_frame2, ..., view1_frame0, view1_frame1, ...
+        # Convert it to view0_frame0, view1_frame0, view2_frame0, ...
+        target_reorder_idx = [view_idx*num_frames + frm_idx for frm_idx in range(num_frames) for view_idx in range(batch_size)]
+        targets = [targets[idx] for idx in target_reorder_idx]
+        # All Outputs is a dict that has keys as frame numbers and values as output dict of mask2former
+        # if num_frames > 1:
+        #     outputs = {k: torch.cat([all_outputs[frame_idx][k] for frame_idx in all_outputs.keys()], dim=0)
+        #         for k in all_outputs[0].keys() if k != "aux_outputs"}
+
+        #     outputs["aux_outputs"] = [
+        #         {k: torch.cat([all_outputs[frame_idx]["aux_outputs"][aux_idx][k] for frame_idx in all_outputs.keys()]) }
+        #         for aux_idx in range(len(all_outputs[0]["aux_outputs"]))
+        #         for k in all_outputs[0]["aux_outputs"][0].keys()
+        #     ] if "aux_outputs" in outputs.keys() else None
+        # else:
+        #     outputs = all_outputs[0]
+
+        # del all_outputs
+
+        self.empty_weight = self.empty_weight.to(outputs["pred_masks_high_res"].device)
+        outputs_without_aux = {k: v for k, v in outputs.items() if k != "aux_outputs"}
+
+        ordered_ind = torch.tensor([i for i in range(self.num_classes)])
+        indices = [(ordered_ind, ordered_ind) for _ in range(len(targets))]
+
+        # Compute the average number of target boxes accross all nodes, for normalization purposes
+        num_masks = sum(len(t["labels"]) for t in targets)
+        num_masks = torch.as_tensor(
+            [num_masks], dtype=torch.float, device=next(iter(outputs.values())).device
+        )
+        if is_dist_avail_and_initialized():
+            torch.distributed.all_reduce(num_masks)
+        num_masks = torch.clamp(num_masks / get_world_size(), min=1).item()
+
+        # Compute all the requested losses
+        losses = {}
+        for loss in self.losses:
+            losses.update(self.get_loss(loss, outputs, targets, indices, num_masks))
+        losses = self._calc_total_loss(losses)
+        i = 0  # number of deep supervision layers
+
+        # In case of auxiliary losses, we repeat this process with the output of each intermediate layer.
+        if "aux_outputs" in outputs and self.deep_supervision:
+            for i, aux_outputs in enumerate(outputs["aux_outputs"]):
+                indices = self.matcher(aux_outputs, targets)
+                for loss in self.losses:
+                    l_dict = self.get_loss(loss, aux_outputs, targets, indices, num_masks)
+                    l_dict = {k + f"_{i}": v for k, v in l_dict.items()}
+                    losses.update(l_dict)
+                losses = self._calc_total_loss(losses, i)
+        return self._calc_core_loss(losses, i+1)
+
+    def _calc_total_loss(self, loss_dict, *args):
+        '''Calculate total loss from loss_dict with the given weight_dict. Index is passed as args 
+        to plausible match the corresponding losses. Total loss is sum of individually weighted dice, focal and
+        ce losses. If args is empty, it means that we are calculating the total loss for the last layer.
+        If args is not empty, it means that we are calculating the total loss for the auxiliary layer.
+        '''
+        idx = '' if len(args) == 0 else f"_{args[0]}"
+        total_loss = 0
+        for k, v in self.weight_dict.items():
+            total_loss += v * loss_dict[f'{k}{idx}']
+        loss_dict[f'total_loss{idx}'] = total_loss
+        return loss_dict
+    
+    def _calc_core_loss(self, loss_dict, num_deep_supervision=1):
+        '''Sum up the total losses and normalize them to calculate the core loss. Also, get rid of
+        byproduct losses except decoder last layer losses.
+        '''
+        core_loss = 0
+        keys_to_pop = []
+        for k, v in loss_dict.items():
+            # Sum total losses
+            if k.startswith('total_loss'):
+                core_loss += v
+            # Get rid of byproduct losses except decoder last layer losses
+            elif k in self.weight_dict.keys():
+                continue
+            else:
+                keys_to_pop.append(k)
+        loss_dict['core_loss'] = core_loss / num_deep_supervision
+        for k in keys_to_pop:
+            loss_dict.pop(k)
+        return loss_dict
+    
+    def __repr__(self):
+        head = "Criterion " + self.__class__.__name__
+        body = [
+            "matcher: {}".format(self.matcher.__repr__(_repr_indent=8)),
+            "losses: {}".format(self.losses),
+            "weight_dict: {}".format(self.weight_dict),
+            "num_classes: {}".format(self.num_classes),
+            "eos_coef: {}".format(self.eos_coef),
+            "num_points: {}".format(self.num_points),
+            "oversample_ratio: {}".format(self.oversample_ratio),
+            "importance_sample_ratio: {}".format(self.importance_sample_ratio),
+        ]
+        _repr_indent = 4
+        lines = [head] + [" " * _repr_indent + line for line in body]
+        return "\n".join(lines)

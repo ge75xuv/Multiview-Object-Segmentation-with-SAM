@@ -9,7 +9,7 @@ scratch:
   vision_lr: 3.0e-6  # 3.0e-06
   obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29]
   obj_ids_extra_sampling: [2, 12, 13, 14]  # extra object ids to sample from for accuracy
-  num_frames: 1
+  num_frames: 2
   multiview: true
   depth_image: false
   vggt_dataset: true
@@ -17,6 +17,7 @@ scratch:
   # Decoder
   num_queries: 23
   num_classes: 23
+  use_dpt_weights: True
   label_projection_type: 'default'  # 'default' or 'human'
   
   mask_dim: 256
@@ -45,7 +46,8 @@ trainer:
     img_size: 518
     patch_size: 14
     embed_dim: 1024
-  
+    num_classes: ${scratch.num_classes}
+
     # Decoder
     mask_decoder_cfg:
       # _target_: custom_models.models.sam2former.mask_former_head.MaskFormerHead
@@ -170,23 +172,16 @@ trainer:
 
   loss:
     all:
-      _target_: custom_models.models.sam2former.criterion.SetCriterion
+      _target_: custom_models.models.vggtformer.criterion.SetCriterion
       num_classes: ${scratch.num_classes}
-      matcher:
-        _target_: custom_models.models.sam2former.matcher.HungarianMatcher
-        cost_class: ${trainer.loss.all.weight_dict.loss_class}
-        cost_mask: ${trainer.loss.all.weight_dict.loss_mask}
-        cost_dice: ${trainer.loss.all.weight_dict.loss_dice}
-        num_points: ${trainer.loss.all.num_points}
       weight_dict:
         loss_mask: 5.0
         loss_dice: 5.0
-        loss_class: 2.0
+        # loss_class: 2.0
       eos_coef: 0.1
       alpha: -1
       loss_weighting: log  # HEADS UP: log linear or default
-      weight_soft_co: 0.1
-      losses: ['labels', 'masks']
+      losses: ['masks']
       num_points: ${scratch.num_sampling_points}
       obj_ids_extra_sampling: ${scratch.obj_ids_extra_sampling}
       oversample_ratio: 3.0
@@ -195,24 +190,17 @@ trainer:
       deep_supervision: False
       pointwise_mask: False
     val:
-      _target_: custom_models.models.sam2former.criterion.SetCriterion
+      _target_: custom_models.models.vggtformer.criterion.SetCriterion
       num_classes: ${scratch.num_classes}
-      matcher:
-        _target_: custom_models.models.sam2former.matcher.HungarianMatcher
-        cost_class: ${trainer.loss.all.weight_dict.loss_class}
-        cost_mask: ${trainer.loss.all.weight_dict.loss_mask}
-        cost_dice: ${trainer.loss.all.weight_dict.loss_dice}
-        num_points: ${trainer.loss.all.num_points}
       weight_dict:
         loss_mask: 5.0
         loss_dice: 5.0
         # loss_iou: 1
-        loss_class: 2.0
+        # loss_class: 2.0
       eos_coef: 0.1
       alpha: -1
       loss_weighting: log  # HEADS UP: log linear or default
-      weight_soft_co: 0.1
-      losses: ['labels', 'masks']
+      losses: ['masks']
       num_points: ${scratch.num_sampling_points}
       oversample_ratio: 3.0
       importance_sample_ratio: 0.75
@@ -241,8 +229,7 @@ trainer:
       _partial_: True
       _target_: custom_models.models.sam2former.lib.load_state_dict_into_model_vggt
       strict: True
-      ignore_unexpected_keys: null
-      ignore_missing_keys: null
+      use_dpt_weights: ${scratch.use_dpt_weights}
       state_dict:
         _target_: training.utils.checkpoint_utils.load_checkpoint_and_apply_kernels
         checkpoint_path: /home/guests/tuna_gurbuz/prototype/models/vggt/checkpoints/model.pt

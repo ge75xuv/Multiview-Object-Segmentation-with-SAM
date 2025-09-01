@@ -180,7 +180,7 @@ def epipolar_mask(
     pts_cam1: torch.Tensor,
     pts_cam2: torch.Tensor,
     _size: Tuple[int, int],
-    step: int = 2,
+    step: int = 4,
     scores: List[torch.Tensor]=None,
     ):
     # Unpack camera intrinsics and extrinsics
@@ -238,8 +238,8 @@ def epipolar_mask(
 
         # If both lines exist, compute the intersection
         elif _check_first == True and _check_second == True:
-            intersect_point1, s1 = single_epiline(_size, _first_epi_lines, step=1, scores=weights[0])
-            intersect_point2, s2 = single_epiline(_size, _second_epi_lines, step=1, scores=weights[1])
+            intersect_point1, s1 = single_epiline(_size, _first_epi_lines, step=step, scores=weights[0])
+            intersect_point2, s2 = single_epiline(_size, _second_epi_lines, step=step, scores=weights[1])
             epi_masks_for_views[view] = intersect_point1, intersect_point2
             score_masks_for_views[view] = s1, s2
 
@@ -269,7 +269,7 @@ def epipolar_mask(
         elif _check_first == True and _check_second == False:
             intersect_point, s0 = single_epiline(_size, 
                            _first_epi_lines if _first_epi_lines is not None else _second_epi_lines,
-                           step=1, scores=weights[0],
+                           step=step, scores=weights[0],
                         )
             epi_masks_for_views[view] = intersect_point, torch.tensor([[]])
             score_masks_for_views[view] = s0, torch.tensor([[]])
@@ -278,7 +278,7 @@ def epipolar_mask(
         elif _check_first == False and _check_second == True:
             intersect_point, s1 = single_epiline(_size, 
                            _first_epi_lines if _first_epi_lines is not None else _second_epi_lines,
-                           step=1, scores=weights[1],
+                           step=step, scores=weights[1],
                         )
             epi_masks_for_views[view] = torch.tensor([[]]), intersect_point
             score_masks_for_views[view] = torch.tensor([[]]), s1

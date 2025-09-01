@@ -44,8 +44,22 @@ class LinearParamScheduler(ParamScheduler):
             return self._end_value
         return self._end_value * where + self._start_value * (1 - where)
 
-def load_state_dict_into_model_vggt(state_dict, model, *args, **kwargs):
-    state_dict = {k: v for k, v in state_dict.items() if k.startswith('aggregator') or k.startswith('depth')}
+def load_state_dict_into_model_vggt(state_dict, model, strict=True, use_dpt_weights=True):
+    print('Loading VGGT pre-trained weights!')
+    # Since we use the depth head for mask prediction, we need to predict Q different shapes
+    if use_dpt_weights:
+        # Get rid of the other heads state dict
+        state_dict = {k: v for k, v in state_dict.items() if k.startswith('aggregator') or k.startswith('depth')}
+        # Num classes
+        O = model.depth_head.scratch.output_conv2[2].bias.shape[0]
+        # Replicate the depth prediction weights and biases apply it to the other classes
+        last_conv_weight = state_dict['depth_head.scratch.output_conv2.2.weight'][0:1].expand([O, -1, -1, -1])
+        last_conv_bias = state_dict['depth_head.scratch.output_conv2.2.bias'][0:1].expand([O])
+        state_dict['depth_head.scratch.output_conv2.2.weight'] = last_conv_weight
+        state_dict['depth_head.scratch.output_conv2.2.bias'] = last_conv_bias
+    else:
+        # Fetch only the aggregator
+        state_dict = {k: v for k, v in state_dict.items() if k.startswith('aggregator')}
     missing_keys, unexpected_keys = model.load_state_dict(state_dict)
     return model
 
