@@ -155,6 +155,8 @@ class SetCriterion(nn.Module):
         self.weight_dict = weight_dict
         self.eos_coef = eos_coef
         self.losses = losses
+        if losses == ['masks']:
+            assert 'loss_dice' in weight_dict.keys(), "The weight for the dice loss is not given in the weight dict."
         empty_weight = torch.ones(self.num_classes + 1)
         empty_weight[-1] = self.eos_coef
         self.alpha = alpha
@@ -245,71 +247,29 @@ class SetCriterion(nn.Module):
             del src_masks
             del target_masks
             return losses
-        elif False:
-            with torch.no_grad():
-                want_per_class = max(1, self.num_points // 16)  # your per-class budget
-                # choose how many extras you want: 4/16 of self.num_points
-                extra_points = max(1, want_per_class * len(self.obj_ids_extra_sampling))  # = 25% of num_points
-                total_points = self.num_points + extra_points
-                # 1) Sample a fixed base set of size total_points (same on all ranks)
-                point_coords = get_uncertain_point_coords_with_randomness(
-                    src_masks,
-                    lambda logits: calculate_uncertainty(logits),
-                    total_points,
-                    self.oversample_ratio,
-                    self.importance_sample_ratio,
-                )  # [N, total_points, 2]
-                # 2) Gather up to `extra_points` class-biased points
-                # We'll try to pull per-class chunks, but cap to extra_points overall.
-                class_ids = self.obj_ids_extra_sampling
-                biased = point_coords.new_empty(point_coords.shape[0], 0, 2)
-                for obj_id in class_ids:
-                    cand = sample_from_obj_id(
-                        target_labels, target_masks, obj_id, point_coords, want_per_class
-                    )
-                    # `cand` is expected to append points; we only want the newly added tail
-                    newly_added = cand.shape[1] - point_coords.shape[1]
-                    if newly_added > 0:
-                        biased_tail = cand[:, -newly_added:, :]                 # take only the new ones
-                        biased = torch.cat([biased, biased_tail], dim=1)        # accumulate
-                        point_coords = cand                                     # advance the base
-                    # stop if we already gathered enough biased points
-                    if biased.shape[1] >= extra_points:
-                        break
-                # 3) Ensure exactly `total_points`: fill last `extra_points` slots with biased points if available
-                N, P, _ = point_coords.shape
-                assert P >= total_points  # should hold because we appended along the way
-                # Take the first total_points as our base slice
-                point_coords = point_coords[:, :total_points, :]
-                # Now overwrite the last extra_points with as many biased as we have (pad if fewer)
-                have = min(biased.shape[1], extra_points)
-                if have > 0:
-                    point_coords[:, -have:, :] = biased[:, :have, :]
-                # if have < extra_points, the remaining tail stays as the original random points
-                # 4) Sample labels/logits at those coords (shapes are fixed across ranks)
-                point_labels = point_sample(
-                    target_masks,
-                    point_coords,
-                    align_corners=False,
-                ).squeeze(1)   # [N, total_points]
+        else:
+            raise(NotImplementedError)
 
-            point_logits = point_sample(
-                src_masks,
-                point_coords,
-                align_corners=False,
-            ).squeeze(1)
-
-            # (optional sanity)
-            assert point_logits.shape == point_labels.shape
-
-            losses = {
-                "loss_mask": sigmoid_ce_loss_jit(point_logits, point_labels, num_masks),
-                "loss_dice": dice_loss_jit(point_logits, point_labels, num_masks),
-            }
-
-            del src_masks
-            del target_masks
-            return losses
+    def loss_pixelwise_mask(self, outputs, targets, indices, num_masks, ignore_index=255):
+        # Get src_masks
+        src_masks = outputs["pred_masks_high_res"]
+        if src_masks.dim() == 5:
+            src_masks = src_masks.flatten(0, 1)  # (B, N, H, W) -> (B*N, H, W)
+        masks = [t["masks"] for t in targets]
+        # Get the target masks
+        target_masks, valid = nested_tensor_from_tensor_list(masks).decompose()
+        target_masks = target_masks.to(src_masks)
+        B, C, H, W = target_masks.shape
+        # argmax gives class index per pixel
+        targets = target_masks.argmax(dim=1)  # [B, H, W]
+        # handle background / void (all zeros)
+        all_zero = (target_masks.sum(dim=1) == 0)  # [B, H, W]
+        targets = targets.clone()
+        targets[all_zero] = ignore_index
+        targets = targets.long()  # [B,1,H,W]
+        # Compute cross entropy loss
+        losses = {'loss_mask': F.cross_entropy(src_masks, targets, reduction='mean', ignore_index=ignore_index)}
+        return losses
 
     def _get_src_permutation_idx(self, indices):
         # permute predictions following indices
@@ -326,6 +286,7 @@ class SetCriterion(nn.Module):
     def get_loss(self, loss, outputs, targets, indices, num_masks):
         loss_map = {
             'masks': self.loss_masks,
+            'pixelwise_mask': self.loss_pixelwise_mask,
         }
         assert loss in loss_map, f"do you really want to compute {loss} loss?"
         return loss_map[loss](outputs, targets, indices, num_masks)
@@ -361,7 +322,7 @@ class SetCriterion(nn.Module):
         # del all_outputs
 
         self.empty_weight = self.empty_weight.to(outputs["pred_masks_high_res"].device)
-        outputs_without_aux = {k: v for k, v in outputs.items() if k != "aux_outputs"}
+        # outputs_without_aux = {k: v for k, v in outputs.items() if k != "aux_outputs"}
 
         ordered_ind = torch.tensor([i for i in range(self.num_classes)])
         indices = [(ordered_ind, ordered_ind) for _ in range(len(targets))]

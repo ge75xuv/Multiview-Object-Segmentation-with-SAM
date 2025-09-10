@@ -5,23 +5,24 @@ scratch:
   num_sampling_points: 4096  # 1024, 4096
   train_batch_size: 1
   num_train_workers: 1
-  base_lr: 3.0e-5  # 5.0e-6
+  base_lr: 3.0e-6  # 5.0e-6
   vision_lr: 3.0e-6  # 3.0e-06
   obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29]
   obj_ids_extra_sampling: [2, 12, 13, 14]  # extra object ids to sample from for accuracy
-  num_frames: 1
-  multiview: true
-  depth_image: true
+  num_frames: 5
+  multiview: false
+  depth_image: false
   flag_epipolar_attn_bias: false  # use epipolar attention bias
   run_first_no_grad: false
   max_epochs: 70
   # Decoder
-  num_queries: 23
+  num_queries: 30
   num_classes: 23
   label_projection_type: 'default'  # 'default' or 'human'
   mask_dim: 256
   # Freeze Mask Decoder
-  freeze_sam_mask_decoder: True
+  freeze_sam_mask_decoder: False
+  use_pointwise_mask_loss: True
 
   # Extra residual connection
   # scalp: 0
@@ -37,7 +38,7 @@ scratch:
   channels: [256, 256, 256]
   # Stride and common stride determines the extra fpn levels NOTE
   stride: [4, 4, 4]
-  old_dec_layers: true
+  old_dec_layers: false  # true (changed for the 08_13_17_25_img_model run)
 
 # dataset:
 #   # PATHS to Dataset
@@ -473,7 +474,7 @@ trainer:
       importance_sample_ratio: 0.75
       image_size: ${scratch.resolution}
       deep_supervision: False
-      pointwise_mask: False
+      pointwise_mask: ${scratch.use_pointwise_mask_loss}
     val:
       _target_: custom_models.models.sam2former.criterion.SetCriterion
       num_classes: ${scratch.num_classes}
@@ -498,8 +499,8 @@ trainer:
       importance_sample_ratio: 0.75
       image_size: ${scratch.resolution}
       deep_supervision: False
-      pointwise_mask: False
-  
+      pointwise_mask: ${scratch.use_pointwise_mask_loss}
+
   distributed:
     backend: nccl
     find_unused_parameters: True
@@ -521,9 +522,10 @@ trainer:
     # resume_from: sam2_logs/07_12_10_18_def2/checkpoints/checkpoint_51.pt
     # resume_from: sam2_logs/07_17_21_33/checkpoints/checkpoint_65.pt
     # resume_from: sam2_logs/07_27_17_33/checkpoints/checkpoint_78.pt
-    # resume_from: sam2_logs/08_11_16_37/checkpoints/checkpoint_28.pt
+    # resume_from: sam2_logs/08_13_17_25_img_model/checkpoints/checkpoint_68.pt
     # resume_from: sam2_logs/08_16_12_45/checkpoints/checkpoint_6.pt
     # resume_from: sam2_logs/08_26_09_11/checkpoints/checkpoint_29.pt
+    resume_from: sam2_logs/09_04_11_56_vid_model1/checkpoints/checkpoint_17.pt
     save_dir: ${launcher.experiment_log_dir}/checkpoints
     save_freq: 1 # 0 only last checkpoint is saved.
     model_weight_initializer:
@@ -541,9 +543,10 @@ trainer:
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_29_16_47/checkpoints/checkpoint_53.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_27_17_33/checkpoints/checkpoint_78.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/07_31_15_02/checkpoints/checkpoint_33.pt
-        checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_03_21_22/checkpoints/checkpoint_37.pt
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_03_21_22/checkpoints/checkpoint_37.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_11_16_37/checkpoints/checkpoint_28.pt
-        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_13_17_25_img_model/checkpoints/checkpoint_70.pt
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_13_17_25_img_model/checkpoints/checkpoint_68.pt
+        checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/09_04_11_56_vid_model1/checkpoints/checkpoint_17.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_26_09_11/checkpoints/checkpoint_29.pt
         ckpt_state_dict_keys: ['model']
 

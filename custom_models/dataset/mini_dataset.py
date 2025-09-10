@@ -365,7 +365,7 @@ class MiniDataset(Dataset):
             persistent_workers=False,
             pin_memory=False,
             prefetch_factor=1 if self.num_workers > 0 else None,
-            multiprocessing_context='spawn',
+            multiprocessing_context='spawn' if self.num_workers > 0 else None,
         )
 
     def load_checkpoint_state(*args, **kwargs):

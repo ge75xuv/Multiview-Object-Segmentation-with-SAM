@@ -83,7 +83,7 @@ MMOR_TAKE_NAME_TO_FOLDER = {'012_1_PKA': '012_PKA', '012_2_PKA': '012_PKA', '015
                             '027_PKA': '023-032_PKA', '028_PKA': '023-032_PKA', '029_PKA': '023-032_PKA', '030_PKA': '023-032_PKA', '031_PKA': '023-032_PKA', '032_PKA': '023-032_PKA'}
 
 MMOR_SPLIT_TO_TAKES = {
-    "train": ['001_PKA', '003_TKA', '005_TKA', '006_PKA', '008_PKA', '010_PKA', '012_1_PKA', '035_PKA', '037_TKA'],  # deleted , '012_PKA'
+    "train": ['001_PKA', '003_TKA', '005_TKA', '006_PKA', '008_PKA', '010_PKA', '012_1_PKA', '012_2_PKA', '035_PKA', '037_TKA'],
     "small_train": ['001_PKA', '003_TKA', '035_PKA', '037_TKA', '005_TKA'],
     "over_train": ['001_PKA'],
     "mini_train": ['013_PKA'],  # just for debugging

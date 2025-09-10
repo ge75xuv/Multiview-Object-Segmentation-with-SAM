@@ -5,11 +5,10 @@ scratch:
   num_sampling_points: 4096  # 1024, 4096
   train_batch_size: 1
   num_train_workers: 0
-  base_lr: 3.0e-5  # 5.0e-6
-  vision_lr: 3.0e-6  # 3.0e-06
+  base_lr: 3.0e-4  # 5.0e-6
   obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29]
   obj_ids_extra_sampling: [2, 12, 13, 14]  # extra object ids to sample from for accuracy
-  num_frames: 2
+  num_frames: 1
   multiview: true
   depth_image: false
   vggt_dataset: true
@@ -17,7 +16,7 @@ scratch:
   # Decoder
   num_queries: 23
   num_classes: 23
-  use_dpt_weights: True
+  use_dpt_weights: False
   label_projection_type: 'default'  # 'default' or 'human'
   
   mask_dim: 256
@@ -90,7 +89,7 @@ trainer:
     train:
       _target_: custom_models.dataset.mini_dataset_vggt.MiniDatasetVGGT
       batch_size: ${scratch.train_batch_size}
-      split_type: 'over_train'
+      split_type: 'train'
       num_frames: ${scratch.num_frames}
       input_image_size: ${scratch.resolution}
       object_labels: ${scratch.obj_labels}
@@ -106,7 +105,7 @@ trainer:
     val:
       _target_: custom_models.dataset.mini_dataset_vggt.MiniDatasetVGGT
       batch_size: ${scratch.train_batch_size}
-      split_type: 'over_train'
+      split_type: 'val'
       num_frames: ${scratch.num_frames}
       input_image_size: ${scratch.resolution}
       object_labels: ${scratch.obj_labels}
@@ -176,12 +175,12 @@ trainer:
       num_classes: ${scratch.num_classes}
       weight_dict:
         loss_mask: 5.0
-        loss_dice: 5.0
+        # loss_dice: 5.0
         # loss_class: 2.0
       eos_coef: 0.1
       alpha: -1
       loss_weighting: log  # HEADS UP: log linear or default
-      losses: ['masks']
+      losses: ['pixelwise_mask']  # Dont forget to change the weight dict too
       num_points: ${scratch.num_sampling_points}
       obj_ids_extra_sampling: ${scratch.obj_ids_extra_sampling}
       oversample_ratio: 3.0
@@ -194,13 +193,13 @@ trainer:
       num_classes: ${scratch.num_classes}
       weight_dict:
         loss_mask: 5.0
-        loss_dice: 5.0
+        # loss_dice: 5.0
         # loss_iou: 1
         # loss_class: 2.0
       eos_coef: 0.1
       alpha: -1
       loss_weighting: log  # HEADS UP: log linear or default
-      losses: ['masks']
+      losses: ['pixelwise_mask']  # Dont forget to change the weight dict too
       num_points: ${scratch.num_sampling_points}
       oversample_ratio: 3.0
       importance_sample_ratio: 0.75
@@ -210,7 +209,7 @@ trainer:
   
   distributed:
     backend: nccl
-    find_unused_parameters: True
+    find_unused_parameters: False
 
   logging:
     tensorboard_writer:
@@ -223,6 +222,7 @@ trainer:
 
   # initialize from a SAM 2 checkpoint
   checkpoint:
+    # resume_from: sam2_logs/09_01_19_49/checkpoints/checkpoint_1.pt
     save_freq: 1 # 0 only last checkpoint is saved.
     save_dir: ${launcher.experiment_log_dir}/checkpoints
     model_weight_initializer:

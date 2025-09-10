@@ -47,9 +47,10 @@ model_size_dict = {
 
 # Model
 model_size = 'base1'
+len_video = 8
 # Tensorboard
 model_name = model_size_dict[model_size]['config'].split('/')[0]
-writer = SummaryWriter(f'./tb_logs/{model_name}_eval/')
+writer = SummaryWriter(f'./tb_logs/{model_name}_video{len_video}_eval/')
 
 # Hydra
 config = model_size_dict[model_size]['config']
@@ -64,10 +65,12 @@ print(device)
 sd = torch.load(ck, map_location="cpu", weights_only=True)["model"]
 missing_keys, unexpected_keys = submodel.load_state_dict(sd, strict=False)
 
+print("Missing keys:", missing_keys)
+print("Unexpected keys:", unexpected_keys)
+
 # Dataset
-len_video = 1
 input_image_size = 256
-batch_size = 20
+batch_size = 1
 shuffle = False
 revert_mean = [-mean[0]/std[0], -mean[1]/std[1], -mean[2]/std[2]]
 revert_std = [1/std[0], 1/std[1], 1/std[2]]
@@ -127,19 +130,28 @@ with torch.no_grad():
         all_frame_outputs_val = all_frame_outputs_val[0]  # It is a multview output, get only single view
 
         print('CP: 1') if flag_print_logs else None
+        
+        # Concatenate frame outputs as batch
+        for i in range(len(all_frame_outputs_val)):
+            if i == 0:
+                all_masks = all_frame_outputs_val[i]['pred_masks_high_res']
+                all_labels = all_frame_outputs_val[i]['pred_logits']
+            else:
+                all_masks = torch.cat((all_masks, all_frame_outputs_val[i]['pred_masks_high_res']), dim=0)
+                all_labels = torch.cat((all_labels, all_frame_outputs_val[i]['pred_logits']), dim=0)
 
         # Convert mask prediction logits to binary masks
-        mask_logits = all_frame_outputs_val[0]['pred_masks_high_res'].float()           # [B,Q,H,W]
+        mask_logits = all_masks.float()           # [B,Q,H,W]
         mask_prob = mask_logits.sigmoid()                                               # [B,Q,H,W]
         binary_pred_masks = (mask_prob > 0.5).cpu().numpy()                             # [B,Q,H,W]
 
         # Convert class logits to class predictions
-        pred_logits = all_frame_outputs_val[0]['pred_logits'].type(torch.float32)
+        pred_logits = all_labels.type(torch.float32)
         probs = pred_logits.softmax(-1)
         class_probs = probs[..., :-1]
         pred_class = class_probs.argmax(-1).cpu().numpy()
         pred_class_prob = class_probs.max(-1).values.cpu().numpy()
-        
+
         # Open Memory
         del batch
         del all_frame_outputs_val
@@ -202,9 +214,9 @@ with torch.no_grad():
         gt_seg_class_mask = np.ones((B, 1, H, W), dtype=np.int8) * 23  # 23 is the background class
         # gt_rgb_mask = np.zeros((B, H, W, 3), dtype=np.uint8)
         for batch_idx in range(B):
-            pos = batched_video_data_val.obj_to_frame_idx[0,:,1] == batch_idx  # The objects in the batch are mixed
-            gt_mask = masks_val[0, pos, :, :].cpu().numpy()  # Get the GT masks in the batch
-            gt_class_id = gt_labels[0, pos].cpu().numpy()  # Get the GT class id in the batch
+            pos = batched_video_data_val.obj_to_frame_idx[:,:,0] == batch_idx  # The objects in the batch are mixed
+            gt_mask = masks_val[pos, :, :].cpu().numpy()  # Get the GT masks in the batch
+            gt_class_id = gt_labels[pos].cpu().numpy()  # Get the GT class id in the batch
             for mask, class_id in zip(gt_mask, gt_class_id):
                 pos = np.where(mask == True)
                 if len(pos[0]) > 0:
@@ -217,10 +229,10 @@ with torch.no_grad():
         del pred_class
         del gt_mask
         del gt_labels
-    
-    
+
+
         print('CP: 2') if flag_print_logs else None
-    
+
         # Initialize lists for masks
         # pred_rgb_mask_list_azure = []
         pred_seg_class_mask_list_azure = []
@@ -230,7 +242,7 @@ with torch.no_grad():
         # Revert the padding
         for batch_idx in range(B):
             # Load the corresponding rgb image to look for padding 
-            img = batched_video_data_val.img_batch[0][batch_idx].permute(1,2,0).cpu().numpy()
+            img = batched_video_data_val.img_batch[batch_idx][0].permute(1,2,0).cpu().numpy()
             
             # Check if the image is black (0,0,0) along the height dimension
             pos_padding = np.where((img[:,:,0] <= 0) == False)
@@ -256,7 +268,7 @@ with torch.no_grad():
         pred_seg_class_mask = np.array(pred_seg_class_mask_list_azure)
         # gt_rgb_mask = np.array(gt_rgb_mask_list_azure)
         gt_seg_class_mask = np.array(gt_seg_class_mask_list_azure)
-        
+
         # Open Memory
         del batched_video_data_val
         del masks_val
@@ -280,21 +292,21 @@ with torch.no_grad():
         preds = torch.tensor(preds, device=device)
         target = torch.tensor(target, device=device)
 
-        test_pq_list = []
-        for i in range(B):
-            test_pred = preds[i]
-            test_target = target[i]
-            test_pq = panoptic_quality(test_pred, test_target)
-            test_pq_list.append(test_pq)
-        mean_pq = torch.tensor(test_pq_list).mean()
+        # test_pq_list = []
+        # for i in range(B):
+        #     test_pred = preds[i]
+        #     test_target = target[i]
+        #     test_pq = panoptic_quality(test_pred, test_target)
+        #     test_pq_list.append(test_pq)
+        # mean_pq = torch.tensor(test_pq_list).mean()
         # print(f'Mean PQ: {mean_pq}')
         # print(test_pq_list)
 
         # Compute PQ
-        # pq = panoptic_quality(preds, target)
-        pq_list.extend(test_pq_list)
-        print(f'Iter {idx} PQ: {mean_pq}')
-        writer.add_scalar(f"PQ/test_{batch_size}", mean_pq, idx)
+        pq = panoptic_quality(preds, target)
+        pq_list.append(pq)
+        print(f'Iter {idx} PQ: {pq}')
+        writer.add_scalar(f"PQ/test_{batch_size}", pq, idx)
         writer.flush() if idx % 10 == 0 else None
         torch.cuda.empty_cache()
 
