@@ -236,6 +236,7 @@ OBJECTS_EPIPOLAR = [
     12,  # 'drill'
     13,  # 'hammer'
     14,  # 'saw'
+    # 15,  # 'tracker'
     16,  # 'mako_robot'
     17,  # 'monitor'
 

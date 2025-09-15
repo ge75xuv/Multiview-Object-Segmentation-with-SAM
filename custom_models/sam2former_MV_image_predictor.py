@@ -53,7 +53,7 @@ model_size_dict = {
 model_size = 'base4'
 # Tensorboard
 model_name = model_size_dict[model_size]['config'].split('/')[0]
-writer = SummaryWriter(f'./tb_logs/{model_name}_eval/')
+writer = SummaryWriter(f'./tb_logs/{model_name}_multiview_eval/')
 
 # Hydra
 config = model_size_dict[model_size]['config']
@@ -74,7 +74,7 @@ submodel.multiview = False
 # Dataset
 len_video = 1
 input_image_size = 256
-batch_size = 20
+batch_size = 1
 shuffle = False
 revert_mean = [-mean[0]/std[0], -mean[1]/std[1], -mean[2]/std[2]]
 revert_std = [1/std[0], 1/std[1], 1/std[2]]
@@ -91,6 +91,8 @@ test_dataset = MiniDataset('test',
                            transforms=transforms,
                            collate_fn= collate_fn_wrapper,
                            batch_size=batch_size,
+                           multiview=True,
+                           depth_image=True,
                            num_workers=0,
                            shuffle=shuffle,)
 print(f'Lenght of the dataset! {len(test_dataset)}')
@@ -129,9 +131,11 @@ with torch.no_grad():
         batched_video_data_val = batch.to(device)
         # batch_seg_mask_gt = batch[1]  # List of PIL Image for debug
         masks_val = batch.masks.to(device)
+        masks_val0 = batch[0].masks.to(device)
+        masks_val1 = batch[1].masks.to(device)
+        masks_val2 = batch[2].masks.to(device)
         with autocast(device_type=device, dtype=amp_type):
             all_frame_outputs_val = submodel(batched_video_data_val)
-        all_frame_outputs_val = all_frame_outputs_val[0]  # It is a multview output, get only single view
 
         print('CP: 1') if flag_print_logs else None
 

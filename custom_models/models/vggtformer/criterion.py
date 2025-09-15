@@ -266,8 +266,9 @@ class SetCriterion(nn.Module):
         all_zero = (target_masks.sum(dim=1) == 0)  # [B, H, W]
         targets = targets.clone()
         targets[all_zero] = ignore_index
-        targets = targets.long()  # [B,1,H,W]
+        targets = targets.long()  # [B,H,W]
         # Compute cross entropy loss
+        # TODO include weights for classes optionally
         losses = {'loss_mask': F.cross_entropy(src_masks, targets, reduction='mean', ignore_index=ignore_index)}
         return losses
 

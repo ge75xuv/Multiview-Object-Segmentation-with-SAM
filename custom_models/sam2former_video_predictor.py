@@ -40,14 +40,14 @@ model_size_dict = {
         'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/09_04_11_56_vid_model1/checkpoints/checkpoint_17.pt',
         },
     'base3': {  # THIS IS VIDEO MODEL30 Q cont
-        'config': '09_04_11_56_vid_model1/config_resolved.yaml',
-        'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/09_07_16_40/checkpoints/checkpoint_18.pt',
+        'config': '09_09_11_28_vid_model_1c/config_resolved.yaml',
+        'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/09_09_11_28_vid_model_1c/checkpoints/checkpoint_18.pt',
         },
 }
 
 # Model
-model_size = 'base1'
-len_video = 8
+model_size = 'base3'
+len_video = 4
 # Tensorboard
 model_name = model_size_dict[model_size]['config'].split('/')[0]
 writer = SummaryWriter(f'./tb_logs/{model_name}_video{len_video}_eval/')
