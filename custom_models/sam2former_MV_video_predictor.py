@@ -29,12 +29,14 @@ from .custom_model_builder import build_sam2former
 
 def process_outputs(view_output, unique_object_identfier):
     # Convert mask prediction logits to binary masks
-    mask_logits = view_output[0]['pred_masks_high_res'].float()           # [B,Q,H,W]
-    mask_prob = mask_logits.sigmoid()                                               # [B,Q,H,W]
+    mask_logits = torch.cat([view_output[k]['pred_masks_high_res'].float() 
+                               for k in view_output.keys()], dim=0)  # [B,Q,H,W]
+    mask_prob = mask_logits.sigmoid()                                # [B,Q,H,W]
     binary_pred_masks = (mask_prob > 0.5).cpu().numpy()  
 
     # Convert class logits to class predictions
-    pred_logits = view_output[0]['pred_logits'].type(torch.float32)
+    pred_logits = torch.cat([view_output[k]['pred_logits'].type(torch.float32) 
+                               for k in view_output.keys()], dim=0)
     probs = pred_logits.softmax(-1)
     class_probs = probs[..., :-1]
     pred_class = class_probs.argmax(-1).cpu().numpy()
@@ -166,13 +168,18 @@ model_size_dict = {
         'config': '09_11_18_13_MV/config_resolved.yaml',
         'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/09_11_18_13_MV/checkpoints/checkpoint_3.pt',
         },
+    'base5': { # THIS IS MV MODEL 23 Q video trained
+        'config': '09_16_13_47_MV/config_resolved.yaml',
+        'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/09_16_13_47_MV/checkpoints/checkpoint_1.pt',
+        },
 }
 
 # Model
-model_size = 'base4'
+model_size = 'base5'
+len_video = 4
 # Tensorboard
 model_name = model_size_dict[model_size]['config'].split('/')[0]
-writer = SummaryWriter(f'./tb_logs/{model_name}_multiview_eval/')
+writer = SummaryWriter(f'./tb_logs/{model_name}_multiview_video{len_video}_eval/')
 
 # Hydra
 config = model_size_dict[model_size]['config']
@@ -188,7 +195,7 @@ sd = torch.load(ck, map_location="cpu", weights_only=True)["model"]
 missing_keys, unexpected_keys = submodel.load_state_dict(sd, strict=False)
 
 # Dataset
-len_video = 1
+
 input_image_size = 256
 batch_size = 1
 shuffle = False
@@ -236,7 +243,7 @@ ADD_RATIO_THR = 0.2
 things = {LABEL_PROJECTION_MAP['default'][idx]['label'] for idx in object_labels}
 stuff = {BACKGROUND}  # Putting 17 does not change anything for the last value
 print(f'Things: {things}\nStuff: {stuff}')
-panoptic_quality_fn = PanopticQuality(stuffs=stuff, things=things).to(device)
+panoptic_quality_fn = PanopticQuality(stuffs=stuff, things=things)
 pq_list = []
 
 # Run the model

@@ -9,7 +9,7 @@ scratch:
   vision_lr: 3.0e-6  # 3.0e-06
   obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29]
   obj_ids_extra_sampling: [2, 12, 13, 14]  # extra object ids to sample from for accuracy
-  num_frames: 1
+  num_frames: 2
   multiview: true
   depth_image: true
   flag_epipolar_attn_bias: false  # use epipolar attention bias
@@ -548,7 +548,8 @@ trainer:
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_13_17_25_img_model/checkpoints/checkpoint_68.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/09_04_11_56_vid_model1/checkpoints/checkpoint_17.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/08_26_09_11/checkpoints/checkpoint_29.pt
-        checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/09_01_14_53_MV/checkpoints/checkpoint_3.pt
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/09_01_14_53_MV/checkpoints/checkpoint_3.pt
+        checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/09_11_18_13_MV/checkpoints/checkpoint_3.pt
         ckpt_state_dict_keys: ['model']
 
 launcher:

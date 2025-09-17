@@ -69,7 +69,7 @@ def collate_fn_wrapper(
 
     # Multiview case
     assert isinstance(batch[0][0], list), "Batch should be a list of lists for multiview data."
-    # assert len(batch) == 1, "Cannot support batch size > 1 for multiview data."
+    assert len(batch) == 1, "Cannot support batch size > 1 for multiview data."
     assert num_frames == len(batch[0][0][0].frames), "Inconsistent number of frames across views."
     # assert len(batch[0]) == 2, "Batch should contain VideoDatapoints and camera data."
     assert len(batch[0][0]) == 3, "Batch should contain exactly 3 views for multiview data."
@@ -81,9 +81,9 @@ def collate_fn_wrapper(
         return MultiviewBatchedVideoDatapoint(*view_batchvideo)
     elif len(batch[0]) == 3:  # Multiview with depth images
         # batch = [([],[],[]), ([],[],[]), ...], Each list contains, 3 views, pose, 3 depths
-        depth_0 = torch.stack([batch[i][2][0][0] for i in range(len(batch))])  # batch idx, depth, frame idx,
-        depth_1 = torch.stack([batch[i][2][1][0] for i in range(len(batch))])  # batch idx, depth, frame idx,
-        depth_2 = torch.stack([batch[i][2][2][0] for i in range(len(batch))])  # batch idx, depth, frame idx,
+        depth_0 = torch.stack([batch[0][2][0][i] for i in range(num_frames)])  # batch idx, depth, frame idx,
+        depth_1 = torch.stack([batch[0][2][1][i] for i in range(num_frames)])  # batch idx, depth, frame idx,
+        depth_2 = torch.stack([batch[0][2][2][i] for i in range(num_frames)])  # batch idx, depth, frame idx,
         view_batchvideo = [None, None, None, batch[0][1], depth_0, depth_1, depth_2]
         view_batchvideo[0] = collate_fn([batch[i][0][0] for i in range(len(batch))], dict_key=dict_key)
         view_batchvideo[1] = collate_fn([batch[i][0][1] for i in range(len(batch))], dict_key=dict_key)

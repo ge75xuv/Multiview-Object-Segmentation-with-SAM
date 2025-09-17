@@ -27,9 +27,17 @@ from .dataset.mini_dataset import MiniDataset
 from .custom_model_builder import build_sam2former
 
 model_size_dict = {
-    'base': {
-        'config': '04_28_00_50/config_resolved.yaml',
-        'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/04_28_00_50/checkpoints/checkpoint_33.pt',
+    # 'base00': {
+    #     'config': '06_27_17_54_def/config_resolved.yaml',
+    #     'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/06_27_17_54_def/checkpoints/checkpoint_27.pt',
+    #     },
+    'base00': {
+        'config': '07_12_10_18_def2/config_resolved.yaml',
+        'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/07_12_10_18_def2/checkpoints/checkpoint_51.pt',
+        },
+    'base01': {
+        'config': '08_13_17_25_img_model/config_resolved.yaml',
+        'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/08_13_17_25_img_model/checkpoints/checkpoint_47.pt',
         },
     'base1': {  # THIS IS VIDEO MODEL 23 Q
         'config': '08_03_21_22/config_resolved.yaml',
@@ -50,7 +58,7 @@ model_size_dict = {
 }
 
 # Model
-model_size = 'base4'
+model_size = 'base01'
 # Tensorboard
 model_name = model_size_dict[model_size]['config'].split('/')[0]
 writer = SummaryWriter(f'./tb_logs/{model_name}_eval/')
@@ -73,8 +81,8 @@ submodel.multiview = False
 
 # Dataset
 len_video = 1
-input_image_size = 256
-batch_size = 20
+input_image_size = 512
+batch_size = 10
 shuffle = False
 revert_mean = [-mean[0]/std[0], -mean[1]/std[1], -mean[2]/std[2]]
 revert_std = [1/std[0], 1/std[1], 1/std[2]]
@@ -112,7 +120,6 @@ test_loader = test_dataset.get_loader()
 del test_dataset
 
 # Prepare panoptic quality metric
-# Stuff: 16, Things: 17 Instance labels: 0-15
 BACKGROUND = 23
 ADD_RATIO_THR = 0.2
 things = {LABEL_PROJECTION_MAP['default'][idx]['label'] for idx in object_labels}
@@ -146,7 +153,7 @@ with torch.no_grad():
         class_probs = probs[..., :-1]
         pred_class = class_probs.argmax(-1).cpu().numpy()
         pred_class_prob = class_probs.max(-1).values.cpu().numpy()
-        
+
         # Open Memory
         del batch
         del all_frame_outputs_val
@@ -245,7 +252,7 @@ with torch.no_grad():
             end = pos_padding[0][-1]
             
             # Slice the predictions and ground truth masks
-            if start == 32:
+            if start == 64:
                 # pred_rgb_mask_list_azure.append(pred_rgb_mask[batch_idx, start:end+1, :, :])
                 pred_seg_class_mask_list_azure.append(pred_seg_class_mask[batch_idx, 0:1, start:end+1, :])
                 # gt_rgb_mask_list_azure.append(gt_rgb_mask[batch_idx, start:end+1, :, :])
