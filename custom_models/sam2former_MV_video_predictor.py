@@ -71,9 +71,9 @@ def _prepare_gt_seg_rgb_masks(masks_val, gt_labels, obj_to_frame_idx):
     # Initialize masks
     gt_seg_class_mask = np.ones((B, 1, H, W), dtype=np.int8) * 23  # 16 is the background class
     for batch_idx in range(B):
-        pos = obj_to_frame_idx[0,:,1] == batch_idx  # The objects in the batch are mixed
-        gt_mask = masks_val[0, pos, :, :].cpu().numpy()  # Get the GT masks in the batch
-        gt_class_id = gt_labels[0, pos].cpu().numpy()  # Get the GT class id in the batch
+        pos = obj_to_frame_idx[:,:,0] == batch_idx  # The objects in the batch are mixed
+        gt_mask = masks_val[pos, :, :].cpu().numpy()  # Get the GT masks in the batch
+        gt_class_id = gt_labels[pos].cpu().numpy()  # Get the GT class id in the batch
         for mask, class_id in zip(gt_mask, gt_class_id):
             pos = np.where(mask == True)
             if len(pos[0]) > 0:
@@ -175,7 +175,7 @@ model_size_dict = {
 }
 
 # Model
-model_size = 'base5'
+model_size = 'base4'
 len_video = 4
 # Tensorboard
 model_name = model_size_dict[model_size]['config'].split('/')[0]

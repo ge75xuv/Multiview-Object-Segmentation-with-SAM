@@ -44,10 +44,11 @@ class LinearParamScheduler(ParamScheduler):
             return self._end_value
         return self._end_value * where + self._start_value * (1 - where)
 
-def load_state_dict_into_model_vggt(state_dict, model, strict=True, use_dpt_weights=True):
+def load_state_dict_into_model_vggt(state_dict, model, strict=True, 
+                                    use_dpt_weights=True, pre_trained_for_seg=False):
     print('Loading VGGT pre-trained weights!')
     # Since we use the depth head for mask prediction, we need to predict Q different shapes
-    if use_dpt_weights:
+    if use_dpt_weights and not pre_trained_for_seg:
         # Get rid of the other heads state dict
         state_dict = {k: v for k, v in state_dict.items() if k.startswith('aggregator') or k.startswith('depth')}
         # Num classes
@@ -57,6 +58,13 @@ def load_state_dict_into_model_vggt(state_dict, model, strict=True, use_dpt_weig
         last_conv_bias = state_dict['depth_head.scratch.output_conv2.2.bias'][1:2].expand([O])
         state_dict['depth_head.scratch.output_conv2.2.weight'] = last_conv_weight
         state_dict['depth_head.scratch.output_conv2.2.bias'] = torch.zeros_like(last_conv_bias)
+    elif use_dpt_weights and pre_trained_for_seg:
+        # Get rid of the other heads state dict
+        # Fetch only the aggregator
+        state_dict = {k: v for k, v in state_dict.items() if not k.startswith('camera') and 
+                      not k.startswith('track') and 
+                      not k.startswith('point')
+                      }
     else:
         # Fetch only the aggregator
         state_dict = {k: v for k, v in state_dict.items() if not k.startswith('camera') and 

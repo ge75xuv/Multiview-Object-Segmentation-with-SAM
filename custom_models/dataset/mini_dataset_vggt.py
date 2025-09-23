@@ -28,6 +28,7 @@ class MiniDatasetVGGT(Dataset):
                  collate_fn,
                  label_projection_type:str='default',
                  multiview:bool=False,
+                 all_cameras:bool=False,
                  batch_size:int=1,
                  num_workers:int=0,
                  **kwargs):
@@ -42,6 +43,7 @@ class MiniDatasetVGGT(Dataset):
         super().__init__()
         # Arguments
         self.multiview = multiview
+        self.all_cameras = all_cameras
         self.num_frames = num_frames
         self.batch_size = batch_size
         self.num_workers= num_workers
@@ -125,6 +127,19 @@ class MiniDatasetVGGT(Dataset):
                 take_images = {k: [path for path in take_images[k] if str(path).split('/')[-1].split('_')[1].split('.')[0] in mutual_ids] for k in take_images.keys()}
                 take_seg_masks = {k: [path for path in take_seg_masks[k] if str(path).split('/')[-1].split('_')[1].split('.')[0] in mutual_ids] for k in take_seg_masks.keys()}
 
+            if self.all_cameras:
+                assert self.multiview, "all_cameras option is only available for multiview setting!"
+                assert num_frames == 1, "all_cameras option is only available for single frame setting!"
+                self.extra_views_dict = {2: [], 3: []}
+                print(f"Loading extra views for the take {take_name}!")
+                for mutual_id in mutual_ids:
+                    for c_idx in [2, 3]:
+                        rgb_path = take_path / 'colorimage' / f'camera0{c_idx}_{mutual_id}.jpg'
+                        assert rgb_path.exists(), f"Extra view image path does not exist! {rgb_path}"
+                        self.extra_views_dict[c_idx].append(rgb_path)
+                # Sanity check for extra views
+                assert len(self.extra_views_dict[2]) == len(self.extra_views_dict[3]) == len(mutual_ids), "The number of frames in the extra views are not equal to the mutual ids!"
+
             # Create video frames, for now we dont care about the views
             end_frame_idx = len(take_images[1]) if len(take_images[1]) != 0 else len(take_images[0])
             try:
@@ -189,8 +204,27 @@ class MiniDatasetVGGT(Dataset):
         # Get file paths
         indeces = index * 3 + np.array([0, 1, 2]) if self.multiview else [index]
         img_view_container = []
-        take_name = str(self.images[indeces[0]][0]).split('/')[-3]  # View Index:0 Frame Index:0
-        depth_images_all_views = []
+
+        # Load extra views if all cameras option is selected
+        extra_view_container = []
+        if self.all_cameras:
+            for c_idx in [2, 3]:
+                video_frames = self.extra_views_dict[c_idx][index]
+
+                # Open frame and segmentation mask as pillow image
+                with Image.open(video_frames) as im_frame:
+                    im_frame = im_frame.convert("RGB")
+                    im_frame.load()
+                im_frame = self.resize_image(self.to_tensor(im_frame))
+                im_frame = self._add_padding(im_frame, self.input_image_size)
+                obj_list = [23]
+                frame = Frame(im_frame, obj_list)
+
+                # Create the VideoDatapoint
+                size_x_y = frame.data.shape[-2:]
+                video_datapoint_extra = VideoDatapoint([frame], index, size_x_y)
+                extra_view_container.append(video_datapoint_extra)
+
         for index in indeces:
             video_frames = self.images[index]
             video_frames_segmentation_mask = self.segmentation_masks[index]
@@ -204,6 +238,8 @@ class MiniDatasetVGGT(Dataset):
 
             # Append the video datapoint to the container
             img_view_container.append(video_datapoint)
+
+        img_view_container.extend(extra_view_container)
 
         return img_view_container, None  # None is for the collate_fn to have a unified object for Sam2Former and VggtFormer
 

@@ -31,6 +31,8 @@ class MultiviewBatchedVideoDatapoint:
     view1_depth: List[torch.Tensor] = None  # Optional depth images for view 1
     view2_depth: List[torch.Tensor] = None  # Optional depth images for view 2
     view3_depth: List[torch.Tensor] = None  # Optional depth images for view 3
+    view4_batchvideo: torch.Tensor = None  # Optional extra view without segmentation masks
+    view5_batchvideo: torch.Tensor = None  # Optional extra view without segmentation masks
 
     def __getitem__(self, idx: int) -> BatchedVideoDatapoint:
         """
@@ -72,9 +74,22 @@ def collate_fn_wrapper(
     assert len(batch) == 1, "Cannot support batch size > 1 for multiview data."
     assert num_frames == len(batch[0][0][0].frames), "Inconsistent number of frames across views."
     # assert len(batch[0]) == 2, "Batch should contain VideoDatapoints and camera data."
-    assert len(batch[0][0]) == 3, "Batch should contain exactly 3 views for multiview data."
+    assert len(batch[0][0]) == 3 or len(batch[0][0]) == 5, "Batch should contain exactly 3 views for multiview data or 3 views + 2 extra"
 
-    if len(batch[0]) == 2:  # Multiview without depth images
+    if len(batch[0]) == 2 and len(batch[0][0]) == 5:
+        # print('The model is using extra views without segmentation masks!')
+        view_batchvideo = [None for _ in range(9)]  # 3 views + cam + 3 depths + 2 extra views
+        view_batchvideo[3] = batch[0][1]  # camera intrinsics and extrinsics
+        # Main views
+        view_batchvideo[0] = collate_fn([batch[0][0][0]], dict_key=dict_key)
+        view_batchvideo[1] = collate_fn([batch[0][0][1]], dict_key=dict_key)
+        view_batchvideo[2] = collate_fn([batch[0][0][2]], dict_key=dict_key)
+        # Extra views
+        view_batchvideo[7] = torch.stack([batch[0][0][3].frames[i].data for i in range(num_frames)], dim=0) # extra view 1
+        view_batchvideo[8] = torch.stack([batch[0][0][4].frames[i].data for i in range(num_frames)], dim=0) # extra view 2
+        return MultiviewBatchedVideoDatapoint(*view_batchvideo)
+
+    elif len(batch[0]) == 2:  # Multiview without depth images
         view_batchvideo = [None, None, None, batch[0][1]]
         for idx, bc_view in enumerate(batch[0][0]):
             view_batchvideo[idx] = collate_fn([bc_view], dict_key=dict_key)
@@ -88,8 +103,6 @@ def collate_fn_wrapper(
         view_batchvideo[0] = collate_fn([batch[i][0][0] for i in range(len(batch))], dict_key=dict_key)
         view_batchvideo[1] = collate_fn([batch[i][0][1] for i in range(len(batch))], dict_key=dict_key)
         view_batchvideo[2] = collate_fn([batch[i][0][2] for i in range(len(batch))], dict_key=dict_key)
-        # for idx, bc_view in enumerate(batch[0][0]):
-        #     view_batchvideo[idx] = collate_fn([bc_view], dict_key=dict_key)
         return MultiviewBatchedVideoDatapoint(*view_batchvideo)
 
 def collate_fn_test(

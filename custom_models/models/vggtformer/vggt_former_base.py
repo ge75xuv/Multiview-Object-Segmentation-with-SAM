@@ -4,6 +4,7 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+from warnings import warn
 import torch
 import torch.nn as nn
 from huggingface_hub import PyTorchModelHubMixin  # used for model hub
@@ -19,8 +20,15 @@ from vggt.heads.track_head import TrackHead
 class VGGT(nn.Module, PyTorchModelHubMixin):
     def __init__(self, img_size=518, patch_size=14, embed_dim=1024,
                  enable_camera=False, enable_point=False, enable_depth=True, enable_track=False, 
-                 mask_decoder_cfg=None, freeze_backbone=True, num_classes=23, dpt_head_activation="linear"):
+                 mask_decoder_cfg=None, freeze_backbone=True, num_classes=23, dpt_head_activation="linear",
+                 loss_type='masks', all_cameras=False):
         super().__init__()
+
+        # Loss-class adjustment
+        # If we do a semantic segmentation with pixelwise classes, we need to add background class
+        num_classes += 1 if loss_type == 'pixelwise_mask' else 0
+        self.all_cameras = all_cameras
+        warn(f"VGGT: all_cameras is set to {self.all_cameras}")
 
         self.aggregator = Aggregator(img_size=img_size, patch_size=patch_size, embed_dim=embed_dim)
         self.camera_head = CameraHead(dim_in=2 * embed_dim) if enable_camera else None
@@ -64,7 +72,12 @@ class VGGT(nn.Module, PyTorchModelHubMixin):
         img_list = []
         for i in range(3):
             img_list.append(input_batch[i].img_batch)
-        images = torch.concatenate(img_list, dim=1)
+        # Only the first 3 views are indexed, the rest are optional
+        if self.all_cameras:
+            assert input_batch.view4_batchvideo is not None and input_batch.view5_batchvideo is not None
+            img_list.append(input_batch.view4_batchvideo.unsqueeze(1))  # extra view 1
+            img_list.append(input_batch.view5_batchvideo.unsqueeze(1))  # extra view 2
+        images = torch.cat(img_list, dim=1)
         # If without batch dimension, add it
         if len(images.shape) == 4:
             images = images.unsqueeze(0)
@@ -86,6 +99,10 @@ class VGGT(nn.Module, PyTorchModelHubMixin):
                 depth, _ = self.depth_head(
                     aggregated_tokens_list, images=images, patch_start_idx=patch_start_idx
                 )
+                assert depth.shape[1] == 5 if self.all_cameras else 3, f"The number of views is inconsistent with the model configuration! {depth.shape[1]}"
+                # Use only the first 3 views for segmentation masks for training
+                if self.training:
+                    depth = depth[:, :3]
                 predictions["pred_masks_high_res"] = depth.permute(0,1,4,2,3)  # The predictions has to come forward
 
             if self.point_head is not None and False:

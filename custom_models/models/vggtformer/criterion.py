@@ -250,7 +250,7 @@ class SetCriterion(nn.Module):
         else:
             raise(NotImplementedError)
 
-    def loss_pixelwise_mask(self, outputs, targets, indices, num_masks, ignore_index=255):
+    def loss_pixelwise_mask(self, outputs, targets, indices, num_masks):
         # Get src_masks
         src_masks = outputs["pred_masks_high_res"]
         if src_masks.dim() == 5:
@@ -265,11 +265,11 @@ class SetCriterion(nn.Module):
         # handle background / void (all zeros)
         all_zero = (target_masks.sum(dim=1) == 0)  # [B, H, W]
         targets = targets.clone()
-        targets[all_zero] = ignore_index
+        targets[all_zero] = self.num_classes
         targets = targets.long()  # [B,H,W]
         # Compute cross entropy loss
         # TODO include weights for classes optionally
-        losses = {'loss_mask': F.cross_entropy(src_masks, targets, reduction='mean', ignore_index=ignore_index)}
+        losses = {'loss_mask': F.cross_entropy(src_masks, targets, reduction='mean', weight=self.empty_weight)}
         return losses
 
     def _get_src_permutation_idx(self, indices):
