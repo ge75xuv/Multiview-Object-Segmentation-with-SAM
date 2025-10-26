@@ -82,6 +82,9 @@ class MiniDatasetVGGT(Dataset):
         self.segmentation_masks = []
         self.camera_features = {}
         
+        # Data containers for all cameras option (Extra views)
+        self.all_cameras_extra_views_dict = {2: [], 3: []}
+        
         # Include interpolated frames (Experimental)
         # include_interpolated = False if not self.multiview else True
         include_interpolated = False
@@ -130,15 +133,18 @@ class MiniDatasetVGGT(Dataset):
             if self.all_cameras:
                 assert self.multiview, "all_cameras option is only available for multiview setting!"
                 assert num_frames == 1, "all_cameras option is only available for single frame setting!"
-                self.extra_views_dict = {2: [], 3: []}
+                takes_extra_views = {2: [], 3: []}
                 print(f"Loading extra views for the take {take_name}!")
                 for mutual_id in mutual_ids:
                     for c_idx in [2, 3]:
                         rgb_path = take_path / 'colorimage' / f'camera0{c_idx}_{mutual_id}.jpg'
                         assert rgb_path.exists(), f"Extra view image path does not exist! {rgb_path}"
-                        self.extra_views_dict[c_idx].append(rgb_path)
+                        takes_extra_views[c_idx].append(rgb_path)
                 # Sanity check for extra views
-                assert len(self.extra_views_dict[2]) == len(self.extra_views_dict[3]) == len(mutual_ids), "The number of frames in the extra views are not equal to the mutual ids!"
+                assert len(takes_extra_views[2]) == len(takes_extra_views[3]) == len(mutual_ids), "The number of frames in the extra views are not equal to the mutual ids!"
+                # Extend the global container
+                for c_idx in [2, 3]:
+                    self.all_cameras_extra_views_dict[c_idx].extend(takes_extra_views[c_idx])
 
             # Create video frames, for now we dont care about the views
             end_frame_idx = len(take_images[1]) if len(take_images[1]) != 0 else len(take_images[0])
@@ -201,15 +207,11 @@ class MiniDatasetVGGT(Dataset):
         return len(self.segmentation_masks)
 
     def __getitem__(self, index):
-        # Get file paths
-        indeces = index * 3 + np.array([0, 1, 2]) if self.multiview else [index]
-        img_view_container = []
-
         # Load extra views if all cameras option is selected
         extra_view_container = []
         if self.all_cameras:
             for c_idx in [2, 3]:
-                video_frames = self.extra_views_dict[c_idx][index]
+                video_frames = self.all_cameras_extra_views_dict[c_idx][index]
 
                 # Open frame and segmentation mask as pillow image
                 with Image.open(video_frames) as im_frame:
@@ -224,6 +226,10 @@ class MiniDatasetVGGT(Dataset):
                 size_x_y = frame.data.shape[-2:]
                 video_datapoint_extra = VideoDatapoint([frame], index, size_x_y)
                 extra_view_container.append(video_datapoint_extra)
+
+        # Get file paths
+        indeces = index * 3 + np.array([0, 1, 2]) if self.multiview else [index]
+        img_view_container = []
 
         for index in indeces:
             video_frames = self.images[index]
@@ -307,7 +313,7 @@ class MiniDatasetVGGT(Dataset):
             persistent_workers=False,
             pin_memory=False,
             prefetch_factor=1 if self.num_workers > 0 else None,
-            multiprocessing_context='spawn' if self.num_workers > 0 else None,
+            # multiprocessing_context='spawn' if self.num_workers > 0 else None,
         )
 
     def load_checkpoint_state(*args, **kwargs):

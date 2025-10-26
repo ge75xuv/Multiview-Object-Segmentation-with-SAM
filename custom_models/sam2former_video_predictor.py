@@ -43,14 +43,18 @@ model_size_dict = {
         'config': '09_09_11_28_vid_model_1c/config_resolved.yaml',
         'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/09_09_11_28_vid_model_1c/checkpoints/checkpoint_18.pt',
         },
+    'base4': {
+        'config': '09_09_11_28_vid_model_1c/config_resolved.yaml',
+        'ck': '/home/guests/tuna_gurbuz/prototype/sam2_logs/09_09_11_28_vid_model_1c/checkpoints/checkpoint_23.pt', # 18
+        },
 }
 
 # Model
-model_size = 'base3'
-len_video = 4
+model_size = 'base4'
+len_video = 8
 # Tensorboard
 model_name = model_size_dict[model_size]['config'].split('/')[0]
-writer = SummaryWriter(f'./tb_logs/{model_name}_video{len_video}_eval/')
+writer = SummaryWriter(f'./tb_logs/{model_name}_video{len_video}_eval_new/')
 
 # Hydra
 config = model_size_dict[model_size]['config']

@@ -4,25 +4,32 @@ scratch:
   resolution: 518
   num_sampling_points: 4096  # 1024, 4096
   train_batch_size: 1
-  num_train_workers: 0
-  base_lr: 1.0e-5  # 5.0e-6  # CHECK 
+  num_train_workers: 1
+  base_lr: 1e-5 # 1e-4 # 1.0e-5   # CHECK 
   obj_labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29]
   obj_ids_extra_sampling: [2, 12, 13, 14]  # extra object ids to sample from for accuracy
   num_frames: 1
   multiview: true
-  all_cameras: true  # CHECK
+  all_cameras: false  # CHECK
   depth_image: false
   vggt_dataset: true
   max_epochs: 70
   # Decoder
   num_queries: 23
   num_classes: 23
-  use_dpt_weights: True  # CHECK
-  pre_trained_for_seg: True  # if true, loads the weights that were pre-trained for segmentation (not depth)
+  use_dpt_weights: false  # CHECK
+  pre_trained_for_seg: false  # if true, loads the weights that were pre-trained for segmentation (not depth)
   label_projection_type: 'default'  # 'default' or 'human'
   # losses: ['pixelwise_mask']  # losses: ['masks']
   losses: ['masks']  # CHECK
-  
+
+  # Unfreeze settings
+  number_of_last_dino_layers_to_unfreeze: 0  # CHECK
+  number_of_first_agg_layers_to_unfreeze: 0  # CHECK
+
+  # Apply Dropout in DPT head (This contradicts the original implementation)
+  apply_dropout: true
+
   mask_dim: 256
   name: ["res3", "res4", "res5"]
   channels: [256, 256, 256]
@@ -52,44 +59,47 @@ trainer:
     num_classes: ${scratch.num_classes}
     all_cameras: ${scratch.all_cameras}
     loss_type: ${scratch.losses[0]}  # 'masks' or 'pixelwise_mask'
+    number_of_last_dino_layers_to_unfreeze: ${scratch.number_of_last_dino_layers_to_unfreeze}
+    number_of_first_agg_layers_to_unfreeze: ${scratch.number_of_first_agg_layers_to_unfreeze}
+    apply_dropout: ${scratch.apply_dropout}
 
     # Decoder
-    mask_decoder_cfg:
-      # _target_: custom_models.models.sam2former.mask_former_head.MaskFormerHead
-      name: ${scratch.name}
-      channels: ${scratch.channels}
-      stride: ${scratch.stride}
-      num_classes: ${scratch.num_classes}
-      # Pixel Decoder
-      pixel_decoder:
-        target_holder: custom_models.models.sam2former.msdeformattn.MSDeformAttnPixelDecoder
-        # input_shape: ${scratch.input_shape}
-        transformer_dropout: 0.0
-        transformer_nheads: 8
-        transformer_dim_feedforward: 2048
-        transformer_enc_layers: 6
-        conv_dim: 256
-        mask_dim: ${scratch.mask_dim}
-        norm: "GN"
-        # deformable transformer encoder args
-        transformer_in_features: ${scratch.name}
-        common_stride: 4
-      loss_weight: 1.0
-      ignore_value: 255
-      transformer_predictor:
-        target_holder: custom_models.models.sam2former.mask2former_transformer_decoder.MultiScaleMaskedTransformerDecoder
-        in_channels: 256
-        num_classes: ${scratch.num_classes}
-        hidden_dim: 256
-        num_queries: ${scratch.num_queries}
-        nheads: 8
-        dim_feedforward: 2048
-        dec_layers: 10
-        old_dec_layers: ${scratch.old_dec_layers}
-        pre_norm: false
-        mask_dim: ${scratch.mask_dim}
-        enforce_input_project: false
-      transformer_in_feature: 'multi_scale_pixel_decoder'
+    # mask_decoder_cfg:
+    #   # _target_: custom_models.models.sam2former.mask_former_head.MaskFormerHead
+    #   name: ${scratch.name}
+    #   channels: ${scratch.channels}
+    #   stride: ${scratch.stride}
+    #   num_classes: ${scratch.num_classes}
+    #   # Pixel Decoder
+    #   pixel_decoder:
+    #     target_holder: custom_models.models.sam2former.msdeformattn.MSDeformAttnPixelDecoder
+    #     # input_shape: ${scratch.input_shape}
+    #     transformer_dropout: 0.0
+    #     transformer_nheads: 8
+    #     transformer_dim_feedforward: 2048
+    #     transformer_enc_layers: 6
+    #     conv_dim: 256
+    #     mask_dim: ${scratch.mask_dim}
+    #     norm: "GN"
+    #     # deformable transformer encoder args
+    #     transformer_in_features: ${scratch.name}
+    #     common_stride: 4
+    #   loss_weight: 1.0
+    #   ignore_value: 255
+    #   transformer_predictor:
+    #     target_holder: custom_models.models.sam2former.mask2former_transformer_decoder.MultiScaleMaskedTransformerDecoder
+    #     in_channels: 256
+    #     num_classes: ${scratch.num_classes}
+    #     hidden_dim: 256
+    #     num_queries: ${scratch.num_queries}
+    #     nheads: 8
+    #     dim_feedforward: 2048
+    #     dec_layers: 10
+    #     old_dec_layers: ${scratch.old_dec_layers}
+    #     pre_norm: false
+    #     mask_dim: ${scratch.mask_dim}
+    #     enforce_input_project: false
+    #   transformer_in_feature: 'multi_scale_pixel_decoder'
     
   data:
     train:
@@ -185,7 +195,6 @@ trainer:
         # loss_mask: 1.0
         loss_mask: 5.0
         loss_dice: 5.0
-        # loss_class: 2.0
       eos_coef: 0.1
       alpha: -1
       loss_weighting: log  # HEADS UP: log linear or default
@@ -206,7 +215,6 @@ trainer:
         # loss_mask: 1.0
         loss_mask: 5.0
         loss_dice: 5.0
-        # loss_class: 2.0
       eos_coef: 0.1
       alpha: -1
       loss_weighting: log  # HEADS UP: log linear or default
@@ -238,6 +246,10 @@ trainer:
     # resume_from: sam2_logs/09_01_19_49/checkpoints/checkpoint_1.pt
     # resume_from: sam2_logs/09_14_07_30_VGGT/checkpoints/checkpoint_5.pt
     # resume_from: sam2_logs/09_04_15_01_VGGT/checkpoints/checkpoint_8.pt
+    # resume_from: sam2_logs/09_23_11_38_VGGT/checkpoints/checkpoint_1.pt
+    # resume_from: sam2_logs/09_24_14_29_VGGT/checkpoints/checkpoint_14.pt
+    # resume_from: sam2_logs/09_24_08_50/checkpoints/checkpoint_12.pt
+    # resume_from: sam2_logs/09_27_10_07/checkpoints/checkpoint_56.pt
     save_freq: 1 # 0 only last checkpoint is saved.
     save_dir: ${launcher.experiment_log_dir}/checkpoints
     model_weight_initializer:
@@ -248,12 +260,15 @@ trainer:
       pre_trained_for_seg: ${scratch.pre_trained_for_seg}
       state_dict:
         _target_: training.utils.checkpoint_utils.load_checkpoint_and_apply_kernels
-        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/models/vggt/checkpoints/model.pt
+        checkpoint_path: /home/guests/tuna_gurbuz/prototype/models/vggt/checkpoints/model.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/09_14_07_30_VGGT/checkpoints/checkpoint_5.pt
         # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/09_04_15_01_VGGT/checkpoints/checkpoint_8.pt
-        checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/09_18_16_17_VGGT/checkpoints/checkpoint_9.pt
-        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/models/sam2/checkpoints/sam2.1_hiera_base_plus.pt # PATH to SAM 2.1 checkpoint
-        ckpt_state_dict_keys: ['model']
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/09_18_16_17_VGGT/checkpoints/checkpoint_9.pt
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/09_24_14_29_VGGT/checkpoints/checkpoint_14.pt
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/09_23_11_38_VGGT/checkpoints/checkpoint_1.pt
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/09_24_08_50/checkpoints/checkpoint_12.pt
+        # checkpoint_path: /home/guests/tuna_gurbuz/prototype/sam2_logs/09_27_10_07/checkpoints/checkpoint_56.pt
+        ckpt_state_dict_keys: []
 
 launcher:
   num_nodes: 1

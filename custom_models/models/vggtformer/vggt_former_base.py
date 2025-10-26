@@ -21,7 +21,8 @@ class VGGT(nn.Module, PyTorchModelHubMixin):
     def __init__(self, img_size=518, patch_size=14, embed_dim=1024,
                  enable_camera=False, enable_point=False, enable_depth=True, enable_track=False, 
                  mask_decoder_cfg=None, freeze_backbone=True, num_classes=23, dpt_head_activation="linear",
-                 loss_type='masks', all_cameras=False):
+                 loss_type='masks', all_cameras=False, apply_dropout=False,
+                 number_of_last_dino_layers_to_unfreeze=0, number_of_first_agg_layers_to_unfreeze=0):
         super().__init__()
 
         # Loss-class adjustment
@@ -33,15 +34,38 @@ class VGGT(nn.Module, PyTorchModelHubMixin):
         self.aggregator = Aggregator(img_size=img_size, patch_size=patch_size, embed_dim=embed_dim)
         self.camera_head = CameraHead(dim_in=2 * embed_dim) if enable_camera else None
         self.point_head = DPTHead(dim_in=2 * embed_dim, output_dim=4, activation="inv_log", conf_activation="expp1") if enable_point else None
-        self.depth_head = DPTHead(dim_in=2 * embed_dim, output_dim=num_classes+1, activation=dpt_head_activation, conf_activation="expp1") if enable_depth else None
+        self.depth_head = DPTHead(dim_in=2 * embed_dim, output_dim=num_classes+1, activation=dpt_head_activation, 
+                                  conf_activation="expp1", apply_dropout=apply_dropout) if enable_depth else None
         self.track_head = TrackHead(dim_in=2 * embed_dim, patch_size=patch_size) if enable_track else None
-        # Depth head is num_classes+1 because the model uses the last one for the confidence estimation,
+        
+        #NOTE Depth head is num_classes+1 because the model uses the last one for the confidence estimation,
         # even though we dont need it, this is the way to have a minimal invasion
+        
+        #NOTE The apply_dropout argument is not in the original VGGT implementation, it is added to enable dropout in DPT head. If it is chosen to be used
+        # it is essential to update the source code.
+
+        # Put a variable for outputting all prediction heads in case of extra views
+        self.output_all_views = False
 
         # Freeze the backbone
         if freeze_backbone:
             for param in self.aggregator.parameters():
                 param.requires_grad = False
+            print("VGGT: Backbone frozen")
+
+        # Unfreeze the last few layers of DINO
+        if number_of_last_dino_layers_to_unfreeze > 0:
+            for param in self.aggregator.patch_embed.blocks[-number_of_last_dino_layers_to_unfreeze:].parameters():
+                param.requires_grad = True
+            print(f"VGGT: Last {number_of_last_dino_layers_to_unfreeze} DINO layers unfrozen")
+
+        # Unfreeze the first few layers of the Aggregator
+        if number_of_first_agg_layers_to_unfreeze > 0:
+            for param in self.aggregator.frame_blocks[:number_of_first_agg_layers_to_unfreeze].parameters():
+                param.requires_grad = True
+            for param in self.aggregator.global_blocks[:number_of_first_agg_layers_to_unfreeze].parameters():
+                param.requires_grad = True
+            print(f"VGGT: First {number_of_first_agg_layers_to_unfreeze} Aggregator layers unfrozen")
 
     def forward(self, input_batch: MultiviewBatchedVideoDatapoint, query_points: torch.Tensor = None):
         """
@@ -101,7 +125,7 @@ class VGGT(nn.Module, PyTorchModelHubMixin):
                 )
                 assert depth.shape[1] == 5 if self.all_cameras else 3, f"The number of views is inconsistent with the model configuration! {depth.shape[1]}"
                 # Use only the first 3 views for segmentation masks for training
-                if self.training:
+                if not self.output_all_views:
                     depth = depth[:, :3]
                 predictions["pred_masks_high_res"] = depth.permute(0,1,4,2,3)  # The predictions has to come forward
 
