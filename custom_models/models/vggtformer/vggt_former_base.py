@@ -101,6 +101,7 @@ class VGGT(nn.Module, PyTorchModelHubMixin):
             assert input_batch.view4_batchvideo is not None and input_batch.view5_batchvideo is not None
             img_list.append(input_batch.view4_batchvideo.unsqueeze(1))  # extra view 1
             img_list.append(input_batch.view5_batchvideo.unsqueeze(1))  # extra view 2
+            img_list.append(input_batch.view6_batchvideo.unsqueeze(1)) if not input_batch.view6_batchvideo is None else None  # extra view 3
         images = torch.cat(img_list, dim=1)
         # If without batch dimension, add it
         if len(images.shape) == 4:
@@ -123,7 +124,7 @@ class VGGT(nn.Module, PyTorchModelHubMixin):
                 depth, _ = self.depth_head(
                     aggregated_tokens_list, images=images, patch_start_idx=patch_start_idx
                 )
-                assert depth.shape[1] == 5 if self.all_cameras else 3, f"The number of views is inconsistent with the model configuration! {depth.shape[1]}"
+                assert depth.shape[1] == 5 or depth.shape[1] == 6 if self.all_cameras else 3, f"The number of views is inconsistent with the model configuration! {depth.shape[1]}"
                 # Use only the first 3 views for segmentation masks for training
                 if not self.output_all_views:
                     depth = depth[:, :3]

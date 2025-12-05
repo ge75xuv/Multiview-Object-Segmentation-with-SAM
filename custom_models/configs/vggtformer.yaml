@@ -10,7 +10,7 @@ scratch:
   obj_ids_extra_sampling: [2, 12, 13, 14]  # extra object ids to sample from for accuracy
   num_frames: 1
   multiview: true
-  all_cameras: false  # CHECK
+  all_cameras: true  # CHECK
   depth_image: false
   vggt_dataset: true
   max_epochs: 70
@@ -24,7 +24,7 @@ scratch:
   losses: ['masks']  # CHECK
 
   # Unfreeze settings
-  number_of_last_dino_layers_to_unfreeze: 0  # CHECK
+  number_of_last_dino_layers_to_unfreeze: 6  # CHECK
   number_of_first_agg_layers_to_unfreeze: 0  # CHECK
 
   # Apply Dropout in DPT head (This contradicts the original implementation)

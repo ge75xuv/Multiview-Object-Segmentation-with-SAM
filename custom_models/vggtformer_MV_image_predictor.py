@@ -214,7 +214,7 @@ submodel = submodel.to(device)
 print(missing_keys, unexpected_keys)
 
 # All cameras flag
-ALL_CAMERAS = False
+ALL_CAMERAS = True
 submodel.all_cameras = ALL_CAMERAS
 print(f"ALL_CAMERAS is set to {ALL_CAMERAS} for the model and the dataset")
 
@@ -318,6 +318,7 @@ with torch.no_grad():
         is_black_row = (ref_img[0,:,:] <= 0)  # Check along width and channels
         pos_padding = np.where(is_black_row == False)
         start = pos_padding[0][0]
+        end = pos_padding[0][-1] + 1  # +1 to include the last index
 
         print('CP: 3') if flag_print_logs else None
 
@@ -325,6 +326,13 @@ with torch.no_grad():
         del batched_video_data_val
 
         print('CP: 4') if flag_print_logs else None
+        
+        pred_seg_class_mask0 = pred_seg_class_mask0[:, :, start:end]
+        gt_seg_class_mask0 = gt_seg_class_mask0[:, :, start:end]
+        pred_seg_class_mask1 = pred_seg_class_mask1[:, :, start:end]
+        gt_seg_class_mask1 = gt_seg_class_mask1[:, :, start:end]
+        pred_seg_class_mask2 = pred_seg_class_mask2[:, :, start:end]
+        gt_seg_class_mask2 = gt_seg_class_mask2[:, :, start:end]
 
         # Calculate PQ
         pq0 = calculate_panoptic_quality(panoptic_quality_fn, pred_seg_class_mask0, gt_seg_class_mask0)

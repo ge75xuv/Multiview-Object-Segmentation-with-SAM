@@ -18,6 +18,12 @@ from custom_models.helpers.load_depth_image import load_depth_image
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
+training_settings = {
+    1: ['MMOR'],
+    2: ['4DOR'],
+    3: ['4DOR', 'MMOR'],
+}
+
 class MiniDatasetVGGT(Dataset):
     
     def __init__(self,
@@ -71,127 +77,211 @@ class MiniDatasetVGGT(Dataset):
         self.get_seg_mask = kwargs.get('get_seg_mask', False)
         self.shuffle = kwargs.get('shuffle', False)
 
-        # Get root path and split folders
-        root_path = MMOR_DATA_ROOT_PATH
-        split_take_keys = MMOR_SPLIT_TO_TAKES.keys()
-        assert split_type in split_take_keys, "Provided split type is not valid!"
-        split_folder_names = MMOR_SPLIT_TO_TAKES[split_type]
-
         # Data containers
         self.images = []
         self.segmentation_masks = []
         self.camera_features = {}
-        
+
         # Data containers for all cameras option (Extra views)
-        self.all_cameras_extra_views_dict = {2: [], 3: []}
-        
+        self.all_cameras_extra_views_dict = {2: [], 3: [], 6: []}
+
+        # MMOR to 4D-OR camera index mapping (Extra views)
+        # This is to map the extra views to the correct cameras. Since the first implementation was done with MMOR dataset
+        # it causes some limitation for indexing if the indices are different.
+        mmor24dor_camera_map = {1:1, 2:4, 3:3, 4:2, 5:5, 6:6}
+
         # Include interpolated frames (Experimental)
         # include_interpolated = False if not self.multiview else True
         include_interpolated = False
 
-        # Iterate over the take folders
-        for take_name in split_folder_names:
-            # Take name projection
-            take_folder = MMOR_TAKE_NAME_TO_FOLDER[take_name] if take_name in MMOR_TAKE_NAME_TO_FOLDER else take_name
+        # Get root path and split folders
+        dataset_names = ['4DOR', 'MMOR']
+        assert dataset_names[0] == '4DOR' if len(dataset_names) > 1 else None
+        for dataset_name_ in dataset_names:
+            if dataset_name_ == 'MMOR':
+                root_path = MMOR_DATA_ROOT_PATH
+                split_take_keys = MMOR_SPLIT_TO_TAKES.keys()
+                assert split_type in split_take_keys, "Provided split type is not valid!"
+                split_folder_names = MMOR_SPLIT_TO_TAKES[split_type]
+            else:  # '4DOR'
+                root_path = OR_4D_DATA_ROOT_PATH
+                segmentation_path = OR_4D_SEGMENTATION_ROOT_PATH
+                split_take_keys = OR4D_SPLIT_TO_TAKES.keys()
+                assert split_type in split_take_keys, "Provided split type is not valid!"
+                split_folder_names = OR4D_SPLIT_TO_TAKES[split_type]
 
-            # Folder names
-            json_path = root_path / 'take_jsons' / f'{take_name}.json'
-            take_path = root_path / take_folder
-            print(f'Loading the take {take_name}!')
-            
-            # Read MMOR/Simstation JSON file for timestamps and image paths
-            with json_path.open() as f:
-                take_json = json.load(f)
-                timestamps = take_json['timestamps']
-                timestamps = {int(k): v for k, v in timestamps.items()}
-                timestamps = sorted(timestamps.items())
+            # Iterate over the take folders
+            for take_name in split_folder_names:
+                # Take name projection
+                take_name_to_folder = MMOR_TAKE_NAME_TO_FOLDER if dataset_name_ == 'MMOR' else OR4D_TAKE_NAME_TO_FOLDER
+                take_folder = take_name_to_folder[take_name] if take_name in take_name_to_folder else take_name
 
-            take_images = {i:[] for i in range(6)}
-            take_seg_masks = {i:[] for i in range(6)}
-            # Iterate through timestamps and generate multiview frames
-            for idx, (timestamp, image_files) in tqdm(enumerate(timestamps)):
-                flag_simstation = True if image_files["azure"] is None else False
-                for c_idx in [1, 4, 5]:
-                    rgb_path = take_path / 'colorimage' / f'camera0{c_idx}_colorimage-{image_files["azure"]}.jpg'
-                    mask_path = take_path / f'segmentation_export_{c_idx}' / f'{rgb_path.stem}.png'
-                    interpolated_mask_path = take_path / f'segmentation_export_{c_idx}' / f'{rgb_path.stem}_interpolated.png'
-                    if mask_path.exists():
-                        take_images[c_idx].append(rgb_path)
-                        take_seg_masks[c_idx].append(mask_path)
-                    elif interpolated_mask_path.exists() and include_interpolated:
-                        take_images[c_idx].append(rgb_path)
-                        take_seg_masks[c_idx].append(interpolated_mask_path)
+                # Folder names
+                if dataset_name_ == 'MMOR':
+                    json_path = root_path / 'take_jsons' / f'{take_name}.json'
+                    take_path = root_path / take_folder
+                    print(f'Loading the take {take_name}!')
+                    # Read MMOR JSON file for timestamps and image paths
+                    with json_path.open() as f:
+                        take_json = json.load(f)
+                        timestamps = take_json['timestamps']
+                        timestamps = {int(k): v for k, v in timestamps.items()}
+                        timestamps = sorted(timestamps.items())
+                else:  # '4DOR'
+                    take_path = root_path / take_folder
+                    segmentation_take_path = segmentation_path / take_folder
+                    json_path = take_path / 'timestamp_to_pcd_and_frames_list.json'
+                    print(f'Loading the take {take_name}!')
+                    # Read 4D-OR JSON file for timestamps and image paths
+                    with json_path.open() as f:
+                        take_json = json.load(f)
+                        timestamps = sorted(take_json)
 
-            # For multiview we get only the mutual timestamps
-            if self.multiview:
-                time_ids = {k: [str(path).split('/')[-1].split('_')[1].split('.')[0] for path in take_images[k]] for k in take_images.keys()}
-                mutual_ids = [id for id in time_ids[1] if (id in time_ids[4]) and (id in time_ids[5])]
-                print(f"Mutual IDs: {len(mutual_ids)}")
-                take_images = {k: [path for path in take_images[k] if str(path).split('/')[-1].split('_')[1].split('.')[0] in mutual_ids] for k in take_images.keys()}
-                take_seg_masks = {k: [path for path in take_seg_masks[k] if str(path).split('/')[-1].split('_')[1].split('.')[0] in mutual_ids] for k in take_seg_masks.keys()}
+                # Containers for the take images and segmentation masks
+                take_images = {i:[] for i in range(6)}
+                take_seg_masks = {i:[] for i in range(6)}
 
-            if self.all_cameras:
-                assert self.multiview, "all_cameras option is only available for multiview setting!"
-                assert num_frames == 1, "all_cameras option is only available for single frame setting!"
-                takes_extra_views = {2: [], 3: []}
-                print(f"Loading extra views for the take {take_name}!")
-                for mutual_id in mutual_ids:
-                    for c_idx in [2, 3]:
-                        rgb_path = take_path / 'colorimage' / f'camera0{c_idx}_{mutual_id}.jpg'
-                        assert rgb_path.exists(), f"Extra view image path does not exist! {rgb_path}"
-                        takes_extra_views[c_idx].append(rgb_path)
-                # Sanity check for extra views
-                assert len(takes_extra_views[2]) == len(takes_extra_views[3]) == len(mutual_ids), "The number of frames in the extra views are not equal to the mutual ids!"
-                # Extend the global container
-                for c_idx in [2, 3]:
-                    self.all_cameras_extra_views_dict[c_idx].extend(takes_extra_views[c_idx])
+                # Iterate through timestamps and generate multiview frames
+                for idx, (timestamp, image_files) in tqdm(enumerate(timestamps)):
+                    # flag_simstation = True if image_files["azure"] is None else False
+                    if dataset_name_ == 'MMOR':
+                        if multiview:  # Check availability of each views' mask
+                            mask_path_list = []
+                            for c_idx in [1, 4, 5]:
+                                rgb_path = take_path / 'colorimage' / f'camera0{c_idx}_colorimage-{image_files["azure"]}.jpg'
+                                mask_path =  take_path / f'segmentation_export_{c_idx}' / f'{rgb_path.stem}.png'
+                                mask_path = take_path / f'segmentation_export_{c_idx}' / f'{rgb_path.stem}.png'
+                                mask_path_list.append(mask_path)
+                            if not all([mask_path.exists() for mask_path in mask_path_list]):
+                                continue  # Skip this frame if one of the masks does not exist
+                        for c_idx in [1, 4, 5]:
+                            rgb_path = take_path / 'colorimage' / f'camera0{c_idx}_colorimage-{image_files["azure"]}.jpg'
+                            mask_path =  take_path / f'segmentation_export_{c_idx}' / f'{rgb_path.stem}.png'
+                            interpolated_mask_path = take_path / f'segmentation_export_{c_idx}' / f'{rgb_path.stem}_interpolated.png'
+                            if mask_path.exists():
+                                take_images[c_idx].append(rgb_path)
+                                take_seg_masks[c_idx].append(mask_path)
+                            elif interpolated_mask_path.exists() and include_interpolated:
+                                take_images[c_idx].append(rgb_path)
+                                take_seg_masks[c_idx].append(interpolated_mask_path)
+                        if all_cameras:  # Include every camera in the dataset independent of the available GT masks
+                            assert multiview, "all_cameras option is only available for multiview setting!"
+                            assert num_frames == 1, "all_cameras option is only available for single frame setting!"
+                            for c_idx in [2, 3]:
+                                rgb_path = take_path / 'colorimage' / f'camera0{c_idx}_colorimage-{image_files["azure"]}.jpg'
+                                assert rgb_path.exists(), f"Extra view image path does not exist! {rgb_path}"
+                                # Extend the global container
+                                self.all_cameras_extra_views_dict[c_idx].append(rgb_path)
+                    else:  # '4DOR'
+                        for c_idx in [1, 2, 5]:
+                            color_idx_str = image_files[f'color_{c_idx}']
+                            rgb_path = take_path / f'colorimage/camera0{c_idx}_colorimage-{color_idx_str}.jpg'
+                            mask_path = segmentation_take_path / f'segmentation_export_{c_idx}' / f'{rgb_path.stem}.png'
+                            interpolated_mask_path = segmentation_take_path / f'segmentation_export_{c_idx}' / f'{rgb_path.stem}_interpolated.png'
+                            if mask_path.exists():
+                                take_images[c_idx].append(rgb_path)
+                                take_seg_masks[c_idx].append(mask_path)
+                            elif interpolated_mask_path.exists() and include_interpolated:
+                                take_images[c_idx].append(rgb_path)
+                                take_seg_masks[c_idx].append(interpolated_mask_path)
+                        if all_cameras:
+                            assert multiview, "all_cameras option is only available for multiview setting!"
+                            assert num_frames == 1, "all_cameras option is only available for single frame setting!"
+                            for c_idx in [2, 3, 6]:
+                                c_idx_file = mmor24dor_camera_map[c_idx]
+                                color_idx_str = image_files[f'color_{c_idx_file}']
+                                rgb_path = take_path / f'colorimage/camera0{c_idx_file}_colorimage-{color_idx_str}.jpg'
+                                assert rgb_path.exists(), f"Extra view image path does not exist! {rgb_path}"
+                                # Extend the global container
+                                self.all_cameras_extra_views_dict[c_idx].append(rgb_path)
 
-            # Create video frames, for now we dont care about the views
-            end_frame_idx = len(take_images[1]) if len(take_images[1]) != 0 else len(take_images[0])
-            try:
-                assert len(take_images[1]) == len(take_images[4]) == len(take_images[5]), "The number of frames in the cameras are not equal!"
-                assert len(take_images[0]) == len(take_images[2]) == len(take_images[3]), "The number of frames in the cameras are not equal!"
-            except AssertionError as e:
-                assert not include_interpolated, "The number of frames in the cameras are not equal!"
-                print(f"Interpolated frames are not included! {e}")
+                # Log print
+                print(f"Take {take_name} loaded with {len(take_images[1])} frames for camera 1.")
+                print(f'The take is loaded with multiview={self.multiview}')
+                print(f'The take is loaded with all_cameras={self.all_cameras}')
 
-            # Define Slices
-            start_idx = [i for i in range(0, end_frame_idx, num_frames)]
-            end_idx = [i for i in range(num_frames, end_frame_idx+num_frames, num_frames)]
+                # For multiview we get only the mutual timestamps
+                if False and self.multiview and dataset_name_ == 'MMOR':
+                    time_ids = {k: [str(path).split('/')[-1].split('_')[1].split('.')[0] for path in take_images[k]] for k in take_images.keys()}
+                    if dataset_name_ == 'MMOR':
+                        mutual_ids = [id for id in time_ids[1] if (id in time_ids[4]) and (id in time_ids[5])]
+                    else:  # '4DOR'
+                        mutual_ids = [id for id in time_ids[1] if (id in time_ids[2]) and (id in time_ids[5])]
+                    print(f"Mutual IDs: {len(mutual_ids)}")
+                    take_images = {k: [path for path in take_images[k] if str(path).split('/')[-1].split('_')[1].split('.')[0] in mutual_ids] for k in take_images.keys()}
+                    take_seg_masks = {k: [path for path in take_seg_masks[k] if str(path).split('/')[-1].split('_')[1].split('.')[0] in mutual_ids] for k in take_seg_masks.keys()}
 
-            # Slice the images from the take_images and take_seg_masks
-            if num_frames == 1:    
-                take_video = [take_images[k][ii:jj] for ii, jj in zip(start_idx, end_idx) for k in take_images.keys() if len(take_images[k]) != 0]
-                take_video_seg_mask = [take_seg_masks[k][ii:jj] for ii, jj in zip(start_idx, end_idx) for k in take_seg_masks.keys() if len(take_seg_masks[k]) != 0]
-            elif num_frames > 1:
-                take_video = {k: [take_images[k][ii:jj] for ii, jj in zip(start_idx, end_idx)] for k in take_images.keys() if len(take_images[k]) != 0}
-                take_video = [frames for frames in take_video.values() if len(frames) > 0]  # Convert dict to list
-                take_video = [frames for time_group in zip(*take_video) for frames in time_group]  # Interleave the frames from different cameras
-                take_video_seg_mask = {k: [take_seg_masks[k][ii:jj] for ii, jj in zip(start_idx, end_idx)] for k in take_seg_masks.keys() if len(take_seg_masks[k]) != 0}
-                take_video_seg_mask = [frames for frames in take_video_seg_mask.values() if len(frames) > 0]  # Convert dict to list
-                take_video_seg_mask = [frames for time_group in zip(*take_video_seg_mask) for frames in time_group]  # Interleave the frames from different cameras
+                # Load extra views if all cameras option is selected
+                if False and self.all_cameras and dataset_name_ == 'MMOR':
+                    assert self.multiview, "all_cameras option is only available for multiview setting!"
+                    assert num_frames == 1, "all_cameras option is only available for single frame setting!"
+                    takes_extra_views = {2: [], 3: [], 6: []}
+                    print(f"Loading extra views for the take {take_name}!")
+                    # Get the extra views based on the mutual ids
+                    for mutual_id in mutual_ids:
+                        for c_idx in [2, 3, 6]:
+                            if c_idx == 6 and dataset_name_ == 'MMOR':
+                                continue  # MMOR dataset does not have camera 6
+                            if c_idx == 6 and take_name == '003_4DOR':
+                                continue  # Take 3 of 4DOR dataset does unaligned camera 6
+                            c_idx_file = mmor24dor_camera_map[c_idx] if dataset_name_ == '4DOR' else c_idx
+                            rgb_path = take_path / 'colorimage' / f'camera0{c_idx_file}_{mutual_id}.jpg'
+                            assert rgb_path.exists(), f"Extra view image path does not exist! {rgb_path}"
+                            takes_extra_views[c_idx].append(rgb_path)
+                    # Sanity check for extra views
+                    assert len(takes_extra_views[2]) == len(takes_extra_views[3]) == len(mutual_ids), "The number of frames in the extra views are not equal to the mutual ids!"
+                    # Extend the global container
+                    for c_idx in [2, 3, 6]:
+                        self.all_cameras_extra_views_dict[c_idx].extend(takes_extra_views[c_idx])
 
-            # Be sure we take every frame
-            try:
-                if len(take_images[1]) != 0:
-                    last_video_frame = take_video[-1][-1] if len(take_video[-1]) > 0 else take_video[-2][-1]
-                    assert (last_video_frame == take_images[5][-1]
-                            ), "The last frame of the video is not the last frame of the take!"
+                # Create video frames, for now we dont care about the views
+                end_frame_idx = len(take_images[1]) if len(take_images[1]) != 0 else len(take_images[0])
+                if multiview and dataset_name_ == 'MMOR':
+                    assert len(take_images[1]) == len(take_images[4]) == len(take_images[5]), "The number of frames in the cameras are not equal!"
+                    assert len(take_images[0]) == len(take_images[2]) == len(take_images[3]), "The number of frames in the cameras are not equal!"
+                elif multiview and dataset_name_ == '4DOR':
+                    assert len(take_images[1]) == len(take_images[2]) == len(take_images[5]), "The number of frames in the cameras are not equal!"
+                    assert len(take_images[0]) == len(take_images[4]) == len(take_images[3]), "The number of frames in the cameras are not equal!"
                 else:
-                    last_video_frame = take_video[-1][-1] if len(take_video[-1]) > 0 else take_video[-2][-1]
-                    assert (last_video_frame == take_images[3][-1]
-                            ), "The last frame of the video is not the last frame of the take!"
-            except:
-                assert not include_interpolated, "The last frame of the video is not the last frame of the take!"
-                print(f"Last frame assertion failed due to exclusion of the interpolated frames!")
+                    print(f"Interpolated frames are not included! The number of frames may not be equal among the cameras!")
 
-            # Remove the uncomplete videos (Essential for converting to numpy)
-            take_video = [im for im in take_video if len(im) == num_frames]
-            take_video_seg_mask = [seg for seg in take_video_seg_mask if len(seg) == num_frames]
+                # Define Slices
+                start_idx = [i for i in range(0, end_frame_idx, num_frames)]
+                end_idx = [i for i in range(num_frames, end_frame_idx+num_frames, num_frames)]
 
-            # Append the video frames to the dataset
-            self.images = self.images + take_video
-            self.segmentation_masks = self.segmentation_masks + take_video_seg_mask
+                # Slice the images from the take_images and take_seg_masks
+                if num_frames == 1:    
+                    take_video = [take_images[k][ii:jj] for ii, jj in zip(start_idx, end_idx) for k in take_images.keys() if len(take_images[k]) != 0]
+                    take_video_seg_mask = [take_seg_masks[k][ii:jj] for ii, jj in zip(start_idx, end_idx) for k in take_seg_masks.keys() if len(take_seg_masks[k]) != 0]
+                elif num_frames > 1:
+                    take_video = {k: [take_images[k][ii:jj] for ii, jj in zip(start_idx, end_idx)] for k in take_images.keys() if len(take_images[k]) != 0}
+                    take_video = [frames for frames in take_video.values() if len(frames) > 0]  # Convert dict to list
+                    take_video = [frames for time_group in zip(*take_video) for frames in time_group]  # Interleave the frames from different cameras
+                    take_video_seg_mask = {k: [take_seg_masks[k][ii:jj] for ii, jj in zip(start_idx, end_idx)] for k in take_seg_masks.keys() if len(take_seg_masks[k]) != 0}
+                    take_video_seg_mask = [frames for frames in take_video_seg_mask.values() if len(frames) > 0]  # Convert dict to list
+                    take_video_seg_mask = [frames for time_group in zip(*take_video_seg_mask) for frames in time_group]  # Interleave the frames from different cameras
+
+                # Be sure we take every frame
+                try:
+                    if len(take_images[1]) != 0:
+                        last_video_frame = take_video[-1][-1] if len(take_video[-1]) > 0 else take_video[-2][-1]
+                        assert (last_video_frame == take_images[5][-1]
+                                ), "The last frame of the video is not the last frame of the take!"
+                    else:
+                        last_video_frame = take_video[-1][-1] if len(take_video[-1]) > 0 else take_video[-2][-1]
+                        assert (last_video_frame == take_images[3][-1]
+                                ), "The last frame of the video is not the last frame of the take!"
+                except:
+                    assert not include_interpolated, "The last frame of the video is not the last frame of the take!"
+                    print(f"Last frame assertion failed due to exclusion of the interpolated frames!")
+
+                # Remove the uncomplete videos (Essential for converting to numpy)
+                take_video = [im for im in take_video if len(im) == num_frames]
+                take_video_seg_mask = [seg for seg in take_video_seg_mask if len(seg) == num_frames]
+
+                # Append the video frames to the dataset
+                self.images = self.images + take_video
+                self.segmentation_masks = self.segmentation_masks + take_video_seg_mask
 
         del take_video
         del take_video_seg_mask
@@ -210,7 +300,9 @@ class MiniDatasetVGGT(Dataset):
         # Load extra views if all cameras option is selected
         extra_view_container = []
         if self.all_cameras:
-            for c_idx in [2, 3]:
+            for c_idx in [2, 3, 6]:
+                if c_idx == 6 and index >= len(self.all_cameras_extra_views_dict[c_idx]):
+                    continue  # MMOR dataset does not have camera 6
                 video_frames = self.all_cameras_extra_views_dict[c_idx][index]
 
                 # Open frame and segmentation mask as pillow image
@@ -318,3 +410,22 @@ class MiniDatasetVGGT(Dataset):
 
     def load_checkpoint_state(*args, **kwargs):
         pass
+
+if __name__ == "__main__":
+    from functools import partial
+    from custom_models.dataset.collate_fn import collate_fn_wrapper
+    dataset = MiniDatasetVGGT(
+      batch_size= 1,
+      split_type= 'train',
+      num_frames= 1,
+      input_image_size= 518,
+      object_labels= [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29],
+      label_projection_type= 'default',
+      num_workers= 1,
+      all_cameras= True,
+      multiview= True,
+      collate_fn= partial(collate_fn_wrapper,
+                          num_frames= 1,
+                          dict_key= 'all'
+                          )
+    )

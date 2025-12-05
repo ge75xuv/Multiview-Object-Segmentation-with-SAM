@@ -13,7 +13,8 @@ OR4D_TAKE_NAME_TO_FOLDER = {'001_4DOR': 'export_holistic_take1_processed', '002_
                             '010_4DOR': 'export_holistic_take10_processed'}
 
 OR4D_SPLIT_TO_TAKES = {
-    "train": ['001_4DOR', '003_4DOR', '005_4DOR', '007_4DOR', '009_4DOR', '010_4DOR'],
+    "train": ['001_4DOR', '005_4DOR', '007_4DOR', '009_4DOR', '010_4DOR', '003_4DOR'],
+    # "train": ['001_4DOR', '005_4DOR', '007_4DOR', '009_4DOR', '010_4DOR'],
     "small_train": ['001_4DOR', '005_4DOR', '007_4DOR', '009_4DOR'],
     "mini_train": ['001_4DOR'],  # just for debugging
     "val": ['004_4DOR', '008_4DOR'],
@@ -64,7 +65,8 @@ OBJECT_LABEL_MAP = {
 }
 
 # OR_4D_DATA_ROOT_PATH = Path('../../4D-OR')
-OR_4D_DATA_ROOT_PATH = Path('/home/data/4D-OR')
+OR_4D_DATA_ROOT_PATH = Path('/home/polyaxon-data/data1/4D-OR')
+OR_4D_SEGMENTATION_ROOT_PATH = Path('/home/guests/tuna_gurbuz/4D-OR/panoptic_segmentations')
 
 EXPORT_HOLISTICS_PATHS = list(OR_4D_DATA_ROOT_PATH.glob('export_holistic_take*'))
 

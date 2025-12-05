@@ -24,6 +24,7 @@ from training.utils.train_utils import makedir, register_omegaconf_resolvers
 # Multiprocessing errors
 import torch.multiprocessing as mp
 mp.set_sharing_strategy("file_system")   # instead of the default "file_descriptor"
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 os.environ["HYDRA_FULL_ERROR"] = "1"
 
